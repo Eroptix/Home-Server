@@ -86,6 +86,19 @@ bool lcdMode = true;
 bool wifiStatus = false;
 String mode = "heat";
 
+/*
+    [DAY]       [00][01][02][03][04][05][06][07][08][09][10][11][12][13][14][15][16][17][18][19][20][21][22][23]
+{
+  "Monday":     [18, 18, 18, 18, 19, 21, 22, 22, 22, 21, 20, 19, 18, 18, 18, 18, 19, 20, 21, 21, 21, 20, 19, 18],
+  "Tuesday":    [18, 18, 18, 18, 19, 21, 22, 22, 22, 21, 20, 19, 18, 18, 18, 18, 19, 20, 21, 21, 21, 20, 19, 18],
+  "Wednesday":  [18, 18, 18, 18, 19, 21, 22, 22, 22, 21, 20, 19, 18, 18, 18, 18, 19, 20, 21, 21, 21, 20, 19, 18],
+  "Thursday":   [18, 18, 18, 18, 19, 21, 22, 22, 22, 21, 20, 19, 18, 18, 18, 18, 19, 20, 21, 21, 21, 20, 19, 18],
+  "Friday":     [18, 18, 18, 18, 19, 21, 22, 22, 22, 21, 20, 19, 18, 18, 18, 18, 19, 20, 21, 21, 21, 20, 19, 18],
+  "Saturday":   [19, 19, 19, 19, 20, 22, 23, 23, 23, 22, 21, 20, 19, 19, 19, 19, 20, 21, 22, 22, 22, 21, 20, 19],
+  "Sunday":     [19, 19, 19, 19, 20, 22, 23, 23, 23, 22, 21, 20, 19, 19, 19, 19, 20, 21, 22, 22, 22, 21, 20, 19]
+}
+*/
+
 //Servo movement parameters
 int angleIncrement = 1;
 int incrementDelay = 75;
@@ -99,6 +112,7 @@ LiquidCrystal_I2C lcd = LiquidCrystal_I2C(0x27, 16, 2);
 
 /************************** Device Functions ***********************************/
 
+// Open WiFi connection
 bool connectWifi()
 {
   int attempts = 1;
@@ -130,6 +144,7 @@ bool connectWifi()
   return true;
 }
 
+// Restart ESP device
 void restartESP()
 {
   Serial.println("Rebooting ESP32");
@@ -140,6 +155,7 @@ void restartESP()
   esp_restart();
 }
 
+// Servo movement logic
 void servoMove (int turnAngle) 
 {
   // Check if servo is detached
@@ -171,6 +187,7 @@ void servoMove (int turnAngle)
   previousAngle = turnAngle;
 }
 
+// Temperature control logic
 void temperatureControl(float currentTemp, int setTemp) 
 {    
     //This function contains the temperature control logic
@@ -187,6 +204,7 @@ void temperatureControl(float currentTemp, int setTemp)
     }
 }
 
+// Set goal temperature and move servo
 void setTemperature(int tempGoal, float celsius)
 {
   //Heater control logic to modify heatingSetting parameter
@@ -229,6 +247,7 @@ void setTemperature(int tempGoal, float celsius)
   EEPROM.commit();
 }
 
+// Refresh LCD display
 void lcdRefresh(String connectionStatus, int timeHour, int timeminutes, double temperature, double humidity, int heatingSetting, int temperatureGoal, bool autoMode)
 {
         // LCD Screen refresh
@@ -262,6 +281,7 @@ void lcdRefresh(String connectionStatus, int timeHour, int timeminutes, double t
         lcd.print((char)223);
 }
 
+// Display update LCD screen
 void lcdUpdate(String currentFW, String latestFW)
 {
   lcd.clear();
@@ -274,6 +294,7 @@ void lcdUpdate(String currentFW, String latestFW)
   lcd.print(latestFW);
 }
 
+// Print local time for debugging
 void printLocalTime()
 {
   struct tm timeinfo;
@@ -298,6 +319,173 @@ void printLocalTime()
   Serial.println(&timeinfo, "%M");
   Serial.print("Second: ");
   Serial.println(&timeinfo, "%S");
+}
+
+// Handle target temperature received via MQTT
+void handleTemperature(String setTemp)
+{
+  tempGoal = setTemp.toInt();
+  
+  // Turn off auto mode
+  handleMode("heat");
+  
+  // Save temperature goal to EEPROM
+  EEPROM.write(TEMP_ADDRESS, tempGoal);
+  EEPROM.commit();
+
+  Serial.print("    [RPC] Set new temperature goal: ");
+  Serial.println(tempGoal);
+
+  publishMessage(tempgoal_topic, tempGoal, false);
+
+  setTemperature(tempGoal,celsius);
+}
+
+// Handle modes received via MQTT
+void handleMode(String setMode)
+{
+  if(setMode == "auto")
+  {
+    autoMode = true;
+    mode = "auto";
+    Serial.print("    [RPC] Mode: ");
+    Serial.println(autoMode);
+
+    // Save mode setup to EEPROM
+    EEPROM.write(MODE_ADDRESS, autoMode);
+    EEPROM.commit();
+
+    // Just an response example
+    publishMessage(mode_topic, mode, false);
+    publishMessage(climate_mode_state_topic, mode, false);
+  }
+  if(setMode == "heat")
+  {
+    autoMode = false;
+    mode = "heat";
+    Serial.print("    [RPC] Mode: ");
+    Serial.println(autoMode);
+
+    // Save mode setup to EEPROM
+    EEPROM.write(MODE_ADDRESS, autoMode);
+    EEPROM.commit();
+
+    // Just an response example
+    publishMessage(mode_topic, mode, false);
+    publishMessage(climate_mode_state_topic, mode, false);
+  }
+  if(setMode == "cool")
+  {
+    autoMode = false;
+    mode = "cool";
+    Serial.print("    [RPC] Mode: ");
+    Serial.println(autoMode);
+
+    // Save mode setup to EEPROM
+    EEPROM.write(MODE_ADDRESS, autoMode);
+    EEPROM.commit();
+
+    // Just an response example
+    publishMessage(mode_topic, mode, false);
+    publishMessage(climate_mode_state_topic, mode, false);
+  }
+}
+
+// Handle commands received via MQTT
+void handleCommand(String message) 
+{
+  if (message == "reboot") 
+  {
+    Serial.println("Command received: Reboot");
+    restartESP();
+  }
+  if (message == "request parameters") 
+  {
+    Serial.println("Command received: Parameter Request");
+    requestParameters();
+  }
+  if (message == "send parameters") 
+  {
+    Serial.println("Command received: Parameter Send");
+    sendParameters();
+  }
+  if (message == "send discoveries") 
+  {
+    Serial.println("Command received: Discovery Send");
+    sendDiscoveries();
+  }
+  if (message == "servo off") 
+  {
+    Serial.println("Command received: Servo Off");
+    servo.detach();
+  }
+}
+
+// Handle parameters received via MQTT
+void handleParameters(const String& jsonPayload) 
+{
+    // Create a JSON document (adjust size if needed)
+    StaticJsonDocument<1024> doc;
+
+    // Deserialize the JSON
+    DeserializationError error = deserializeJson(doc, jsonPayload);
+    if (error) {
+        Serial.print("JSON Parsing Failed: ");
+        Serial.println(error.c_str());
+        return;
+    }
+
+    // Extract values
+    onTemperature = doc["onTemperature"].as<int>();
+    offTemperature = doc["offTemperature"].as<int>();
+    tempControlRange = doc["tempControlRange"].as<float>();
+    safetyTemp = doc["safetyTemp"].as<int>();
+    refreshRate = doc["refreshRate"].as<int>();
+    timeOffset = doc["timeOffset"].as<int>();
+    tempCalibration = doc["tempOffset"].as<float>();
+
+    // Print extracted values
+    Serial.println("  Extracted Parameters:");
+    Serial.print("    onTemperature: ");
+    Serial.println(onTemperature);
+    Serial.print("    offTemperature: ");
+    Serial.println(offTemperature);
+    Serial.print("    tempControlRange: ");
+    Serial.println(tempControlRange);
+    Serial.print("    safetyTemp: ");
+    Serial.println(safetyTemp);
+    Serial.print("    refreshRate: ");
+    Serial.println(refreshRate);
+    Serial.print("    timeOffset: ");
+    Serial.println(timeOffset);
+    Serial.print("    tempOffset: ");
+    Serial.println(tempCalibration);
+}
+
+// Handle parameters received via MQTT
+void handleTemperatureProgram(const String& jsonPayload) 
+{
+    // Create a JSON document (adjust size if needed)
+    StaticJsonDocument<1024> doc;
+
+    DeserializationError error = deserializeJson(doc, jsonPayload);
+    if (error) 
+    {
+        Serial.print("JSON Parsing Failed: ");
+        Serial.println(error.c_str());
+        return;
+    }
+
+    const char* days[] = {"Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"};
+    
+    for (int d = 0; d < 7; d++) {
+      JsonArray dayTemps = doc[days[d]];
+      for (int h = 0; h < 24; h++) {
+        tempSchedule[d][h] = dayTemps[h];
+      }
+    }
+    
+    Serial.println("Updated temperature schedule received!");
 }
 
 /************************** Clock Setup ***********************************/
@@ -676,6 +864,14 @@ void requestParameters()
   client.publish(parameter_request_topic.c_str(), requestPayload.c_str());
 }
 
+// Request server-side temperature schedule from Home Assistant
+void requestTemperatureSchedule()
+{
+  String requestPayload = String("{\"device\":\"") + deviceName + String("\"}");
+  Serial.printf("[INFO] Publishing temperature schedule request to MQTT: %s\n", requestPayload.c_str());
+  client.publish(climate_schedule_request_topic.c_str(), requestPayload.c_str());
+}
+
 // Remove white spaces from a String input
 String removeSpaces(String input) {
   String output = "";
@@ -837,173 +1033,6 @@ void sendDiscoveries()
   publishMQTTClimateDiscovery("thermostat", "climate"); 
 }
 
-// Handle target temperature received via MQTT
-void handleTemperature(String setTemp)
-{
-  tempGoal = setTemp.toInt();
-  
-  // Turn off auto mode
-  handleMode("heat");
-  
-  // Save temperature goal to EEPROM
-  EEPROM.write(TEMP_ADDRESS, tempGoal);
-  EEPROM.commit();
-
-  Serial.print("    [RPC] Set new temperature goal: ");
-  Serial.println(tempGoal);
-
-  publishMessage(tempgoal_topic, tempGoal, false);
-
-  setTemperature(tempGoal,celsius);
-}
-
-// Handle modes received via MQTT
-void handleMode(String setMode)
-{
-  if(setMode == "auto")
-  {
-    autoMode = true;
-    mode = "auto";
-    Serial.print("    [RPC] Mode: ");
-    Serial.println(autoMode);
-
-    // Save mode setup to EEPROM
-    EEPROM.write(MODE_ADDRESS, autoMode);
-    EEPROM.commit();
-
-    // Just an response example
-    publishMessage(mode_topic, mode, false);
-    publishMessage(climate_mode_state_topic, mode, false);
-  }
-  if(setMode == "heat")
-  {
-    autoMode = false;
-    mode = "heat";
-    Serial.print("    [RPC] Mode: ");
-    Serial.println(autoMode);
-
-    // Save mode setup to EEPROM
-    EEPROM.write(MODE_ADDRESS, autoMode);
-    EEPROM.commit();
-
-    // Just an response example
-    publishMessage(mode_topic, mode, false);
-    publishMessage(climate_mode_state_topic, mode, false);
-  }
-  if(setMode == "cool")
-  {
-    autoMode = false;
-    mode = "cool";
-    Serial.print("    [RPC] Mode: ");
-    Serial.println(autoMode);
-
-    // Save mode setup to EEPROM
-    EEPROM.write(MODE_ADDRESS, autoMode);
-    EEPROM.commit();
-
-    // Just an response example
-    publishMessage(mode_topic, mode, false);
-    publishMessage(climate_mode_state_topic, mode, false);
-  }
-}
-
-// Handle Commands Received via MQTT
-void handleCommand(String message) 
-{
-  if (message == "reboot") 
-  {
-    Serial.println("Command received: Reboot");
-    restartESP();
-  }
-  if (message == "request parameters") 
-  {
-    Serial.println("Command received: Parameter Request");
-    requestParameters();
-  }
-  if (message == "send parameters") 
-  {
-    Serial.println("Command received: Parameter Send");
-    sendParameters();
-  }
-  if (message == "send discoveries") 
-  {
-    Serial.println("Command received: Discovery Send");
-    sendDiscoveries();
-  }
-  if (message == "servo off") 
-  {
-    Serial.println("Command received: Servo Off");
-    servo.detach();
-  }
-}
-
-// Handle Parameters Received via MQTT
-void handleParameters(const String& jsonPayload) 
-{
-    // Create a JSON document (adjust size if needed)
-    StaticJsonDocument<1024> doc;
-
-    // Deserialize the JSON
-    DeserializationError error = deserializeJson(doc, jsonPayload);
-    if (error) {
-        Serial.print("JSON Parsing Failed: ");
-        Serial.println(error.c_str());
-        return;
-    }
-
-    // Extract values
-    onTemperature = doc["onTemperature"].as<int>();
-    offTemperature = doc["offTemperature"].as<int>();
-    tempControlRange = doc["tempControlRange"].as<float>();
-    safetyTemp = doc["safetyTemp"].as<int>();
-    refreshRate = doc["refreshRate"].as<int>();
-    timeOffset = doc["timeOffset"].as<int>();
-    tempCalibration = doc["tempOffset"].as<float>();
-
-    // Print extracted values
-    Serial.println("  Extracted Parameters:");
-    Serial.print("    onTemperature: ");
-    Serial.println(onTemperature);
-    Serial.print("    offTemperature: ");
-    Serial.println(offTemperature);
-    Serial.print("    tempControlRange: ");
-    Serial.println(tempControlRange);
-    Serial.print("    safetyTemp: ");
-    Serial.println(safetyTemp);
-    Serial.print("    refreshRate: ");
-    Serial.println(refreshRate);
-    Serial.print("    timeOffset: ");
-    Serial.println(timeOffset);
-    Serial.print("    tempOffset: ");
-    Serial.println(tempCalibration);
-}
-
-// Handle Parameters Received via MQTT
-void handleTemperatureProgram(const String& jsonPayload) 
-{
-    // Create a JSON document (adjust size if needed)
-    StaticJsonDocument<1024> doc;
-
-    DeserializationError error = deserializeJson(doc, jsonPayload);
-    if (error) 
-    {
-        Serial.print("JSON Parsing Failed: ");
-        Serial.println(error.c_str());
-        return;
-    }
-
-    const char* days[] = {"Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"};
-    
-    for (int d = 0; d < 7; d++) {
-      JsonArray dayTemps = doc[days[d]];
-      for (int h = 0; h < 24; h++) {
-        tempSchedule[d][h] = dayTemps[h];
-      }
-    }
-    
-    Serial.println("Updated temperature schedule received!");
-}
-
 // Send back received parameters to the server
 void sendParameters()
 {
@@ -1063,6 +1092,10 @@ void setup()
 
   // Request boot parameters
   requestParameters();
+  delay(1000);
+
+  // Request temperature schedule
+  requestTemperatureSchedule();
   delay(1000);
 
   // Verify received parameters
