@@ -7,9 +7,7 @@
 // All text above must be included in any redistribution.
 
 /************************** Libraries ***********************************/
-//#define THINGSBOARD_ENABLE_DYNAMIC 1
 
-#include "config.h"/
 #include <EEPROM.h>
 #include <WiFi.h>
 #include <Wire.h>
@@ -31,7 +29,16 @@
 #include <HTTPClient.h>
 #include <Update.h>
 
-/************************** Parameters ***********************************/
+/************************** Device Settings ***********************************/
+
+// Device-specific settings
+const char* deviceName = "thermostat";
+const char* currentSwVersion = "1.2.2";
+const char* deviceModel = "ESP32-NodeMCU";
+const char* deviceManufacturer = "BTM Engineering";
+String configurationUrl = "";
+String  firmwareUrl;
+String  latestSwVersion;
 
 // Wi-Fi credentials
 const char* WIFI_SSID = "UPC8F21BEF";
@@ -62,12 +69,12 @@ int servoLastAngle = 90;
 int refreshRate = 60; //Measurement loop length
 int refreshLoop = 1; //Number of refresh loops
 int connectRate = 300; //Connection check loop
-
 unsigned long previousMillis1 = 0;
 
 // Temperature control parameters
 //  Time hour       [01,02,03,04,05,06,07,08,09,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24]
 int tempProgram[24] = {18,17,17,17,18,18,19,20,20,18,18,18,18,19,20,20,20,20,20,20,20,20,20,20};
+int tempSchedule[7][24];  // Store temperature schedule for each hour of the week
 int onTemperature = 22;
 int offTemperature = 14;
 double tempControlRange = 0.15;
@@ -90,16 +97,208 @@ LiquidCrystal_I2C lcd = LiquidCrystal_I2C(0x27, 16, 2);
 #define SERVO_PIN 2
 #define EEPROM_SIZE 30
 
-/************************** Device Settings ***********************************/
+/************************** Device Functions ***********************************/
 
-// Device-specific settings
-const char* deviceName = "thermostat";
-const char* currentSwVersion = "1.2.1";
-const char* deviceModel = "ESP32-NodeMCU";
-const char* deviceManufacturer = "BTM Engineering";
-String configurationUrl = "";
-String  firmwareUrl;
-String  latestSwVersion;
+bool connectWifi()
+{
+  int attempts = 1;
+  
+  // Connect to WiFi network
+  WiFi.begin(WIFI_SSID, WIFI_PASS);
+
+  // Wait for connection
+  while (WiFi.status() != WL_CONNECTED) {
+    attempts = attempts + 1;
+    delay(500);
+    Serial.print(".");
+
+    if(attempts == 50){
+      // Failed to connect
+      Serial.println("Failed to connect to WiFi");
+      return false;
+    }
+  }
+  
+  configurationUrl = WiFi.localIP().toString();
+
+  Serial.println("");
+  Serial.print("Connected to ");
+  Serial.println(WIFI_SSID);
+  Serial.print("IP address: ");
+  Serial.println(WiFi.localIP());
+
+  return true;
+}
+
+void restartESP()
+{
+  Serial.println("Rebooting ESP32");
+  lcd.clear();
+  lcd.setCursor(0,0);
+  lcd.print("REBOOTING");
+  delay(2000);
+  esp_restart();
+}
+
+void servoMove (int turnAngle) 
+{
+  // Check if servo is detached
+  if(servo.attached() == false)
+  {
+    servo.write(previousAngle);
+    servo.attach(SERVO_PIN);
+  }
+  
+  //This function moves the servo slower with an adjustable angle increment and delay  
+  if(turnAngle>previousAngle)
+  {
+    for(int i=previousAngle; i<=turnAngle; i+=angleIncrement)
+    {
+      servo.write(i);
+      delay(incrementDelay);
+    }
+  }
+
+  if(turnAngle<previousAngle)
+  {
+    for(int i=previousAngle; i>=turnAngle; i-=angleIncrement)
+    {
+      servo.write(i);
+      delay(incrementDelay);
+    }
+  }
+
+  previousAngle = turnAngle;
+}
+
+void temperatureControl(float currentTemp, int setTemp) 
+{    
+    //This function contains the temperature control logic
+    if(currentTemp > setTemp + tempControlRange) 
+    {
+      //Current temperature higher than set temperature range --> OFF
+      heaterSetting = offTemperature;
+    }
+
+    if(currentTemp < setTemp - tempControlRange) 
+    {
+      //Current temperature lower than set temperature range --> ON
+      heaterSetting = onTemperature;
+    }
+}
+
+void setTemperature(int tempGoal, float celsius)
+{
+  //Heater control logic to modify heatingSetting parameter
+  temperatureControl(celsius, tempGoal);
+  
+  Serial.print("Heater Setting: ");
+  Serial.println(heaterSetting);
+  
+  //Send heater setting
+  if(heaterSetting == onTemperature)
+  {
+    publishMessage(heating_topic, true, false);
+  }
+  else 
+  {
+    publishMessage(heating_topic, false, false);
+  }
+  
+  //Convert the selected temperature to servo position
+  int angle = servoConvertA * heaterSetting + servoConvertB;
+  
+  Serial.print("Servo Angle: ");
+  Serial.println(angle);
+  
+  //Check if servo position is valid
+  if(angle < 5) 
+  {
+    angle = 5;
+  }
+  else if(angle > 160) 
+  {
+    angle = 160;
+  }
+  
+  //Send order to the servo
+  servoMove(angle);
+  
+  //Save last servo position to the EEPROM
+  EEPROM.write(SERVO_ADDRESS, angle);
+  EEPROM.commit();
+}
+
+void lcdRefresh(String connectionStatus, int timeHour, int timeminutes, double temperature, double humidity, int heatingSetting, int temperatureGoal, bool autoMode)
+{
+        // LCD Screen refresh
+        lcd.clear();
+        lcd.setCursor(0,0);
+        if(timeHour < 10) {lcd.print(" ");}
+        lcd.print(timeHour);
+        lcd.print(":");
+        if(timeminutes < 10) {lcd.print("0");}
+        lcd.print(timeminutes); 
+        lcd.print(" ");
+        if(connectionStatus == "OFFLINE"){lcd.print(char(4));}
+        else {lcd.print(char(3));}
+        lcd.print("  ");
+        lcd.print(char(2));
+        lcd.print(" ");
+        lcd.print(humidity,1);
+        lcd.print("%"); 
+        lcd.setCursor(0,1);
+        if(autoMode){lcd.print("A");}
+        else {lcd.print("M");}
+        lcd.print("|");
+        lcd.print(temperatureGoal);
+        lcd.print("| ");
+        if(heatingSetting == onTemperature){lcd.print(char(5));}
+        else {lcd.print(char(6));}
+        lcd.print("  ");
+        lcd.print(char(1));
+        lcd.print(" ");
+        lcd.print(temperature,1);
+        lcd.print((char)223);
+}
+
+void lcdUpdate(String currentFW, String latestFW)
+{
+  lcd.clear();
+  lcd.setCursor(0,0);
+  lcd.print("Updating FW:");
+  lcd.setCursor(0,1);
+  lcd.print(" ");
+  lcd.print(currentFW);
+  lcd.print(" ->" );
+  lcd.print(latestFW);
+}
+
+void printLocalTime()
+{
+  struct tm timeinfo;
+  if(!getLocalTime(&timeinfo)){
+    Serial.println("Failed to obtain time");
+    return;
+  }
+  Serial.println(&timeinfo, "%A, %B %d %Y %H:%M:%S");
+  Serial.print("Day of week: ");
+  Serial.println(&timeinfo, "%A");
+  Serial.print("Month: ");
+  Serial.println(&timeinfo, "%B");
+  Serial.print("Day of Month: ");
+  Serial.println(&timeinfo, "%d");
+  Serial.print("Year: ");
+  Serial.println(&timeinfo, "%Y");
+  Serial.print("Hour: ");
+  Serial.println(&timeinfo, "%H");
+  Serial.print("Hour (12 hour format): ");
+  Serial.println(&timeinfo, "%I");
+  Serial.print("Minute: ");
+  Serial.println(&timeinfo, "%M");
+  Serial.print("Second: ");
+  Serial.println(&timeinfo, "%S");
+}
 
 /************************** Clock Setup ***********************************/
 
@@ -111,6 +310,7 @@ ESP32Time rtc(3600);  // offset in seconds GMT+1
 // Variables to save date and time
 String formattedDate;
 String dayStamp;
+int timeDay;
 int timeStamp;
 int timeMinutes;
 int timeOffset = 1;
@@ -119,6 +319,15 @@ int upTime;
 const char* ntpServer = "europe.pool.ntp.org";
 long  gmtOffset_sec = 0;
 int   daylightOffset_sec = 3600;
+
+/************************** LCD Icons ***********************************/
+
+byte termometru[8]={B00100, B01010, B01010, B01110, B01110, B11111, B11111, B01110};    //icon for termometer
+byte picatura[8]={B00100, B00100, B01010, B01010, B10001, B10001, B10001, B01110};      //icon for water droplet
+byte wifiON[8] = {B00000, B00000, B00001, B00011, B00111, B01111, B11111, B00000};      //icon for wifi ON
+byte wifiOFF[8] = {B10100, B01000, B10100, B00001, B00011, B00111, B01111, B11111};     //icon for wifi OFF
+byte heatOn[8] = {B00000, B10101, B10101, B10101, B10101, B00000, B11111, B10101};      //icon for heating ON
+byte heatOff[8] = {B00000, B00000, B00000, B00000, B00000, B00000, B11111, B10101};     //icon for heating OFF
 
 /************************** HomeAssistant Settings ***********************************/
 
@@ -158,15 +367,17 @@ String climate_mode_command_topic =         String("home/") + deviceName + Strin
 String climate_temperature_state_topic =    String("home/") + deviceName + String("/climate/target_temperature");
 String climate_mode_state_topic =           String("home/") + deviceName + String("/climate/mode");
 String climate_temperature_current_topic =  String("home/") + deviceName + String("/climate/current_temperature");
+String climate_schedule_request_topic =     String("home/") + deviceName + String("/climate/schedule/request");
+String climate_schedule_response_topic =    String("home/") + deviceName + String("/climate/schedule");
 
 // Parameters
-String ontemperature_topic =                String("home/") + deviceName + String("/parameter/ontemperature");
-String offtemperature_topic =               String("home/") + deviceName + String("/parameter/offtemperature");
-String tempcontrolrange_topic =             String("home/") + deviceName + String("/parameter/tempcontrolrange");
-String safetytemp_topic =                   String("home/") + deviceName + String("/parameter/safetytemp");
-String refreshrate_topic =                  String("home/") + deviceName + String("/parameter/refreshrate");
-String timeoffset_topic =                   String("home/") + deviceName + String("/parameter/timeoffset");
-String tempoffset_topic =                   String("home/") + deviceName + String("/parameter/tempoffset");
+String ontemperature_topic =                String("home/") + deviceName + String("/parameters/ontemperature");
+String offtemperature_topic =               String("home/") + deviceName + String("/parameters/offtemperature");
+String tempcontrolrange_topic =             String("home/") + deviceName + String("/parameters/tempcontrolrange");
+String safetytemp_topic =                   String("home/") + deviceName + String("/parameters/safetytemp");
+String refreshrate_topic =                  String("home/") + deviceName + String("/parameters/refreshrate");
+String timeoffset_topic =                   String("home/") + deviceName + String("/parameters/timeoffset");
+String tempoffset_topic =                   String("home/") + deviceName + String("/parameters/tempoffset");
 
 // Initalize the Mqtt client instance
 WiFiClient espClient;
@@ -193,6 +404,7 @@ bool connectMQTT()
       subscribeTopic(parameter_response_topic);
       subscribeTopic(climate_mode_command_topic);
       subscribeTopic(climate_temperature_command_topic);
+      subscribeTopic(climate_schedule_response_topic);
 
       // Send discovery payload
 	    sendDiscoveries();
@@ -243,6 +455,10 @@ void mqttCallback(char* topic, byte* payload, unsigned int length)
   if (String(topic) == climate_mode_command_topic) 
   {
     handleMode(message);
+  }
+  if (String(topic) == climate_schedule_response_topic) 
+  {
+    handleTemperatureProgram(message);
   }
 }
 
@@ -444,9 +660,7 @@ void updateFirmwareOTA(String msg)
   // Compare versions
   if (latestSwVersion != currentSwVersion) {
     Serial.println("[INFO] Firmware update available! Starting OTA update");
-    lcd.clear();
-    lcd.setCursor(0,0);
-    lcd.print("Updating fimrware");
+    lcdUpdate(currentSwVersion,latestSwVersion);
     performOTA();
   } else {
     Serial.println("[INFO] Device firmware is up to date.");
@@ -462,6 +676,7 @@ void requestParameters()
   client.publish(parameter_request_topic.c_str(), requestPayload.c_str());
 }
 
+// Remove white spaces from a String input
 String removeSpaces(String input) {
   String output = "";
   for (int i = 0; i < input.length(); i++) {
@@ -472,7 +687,7 @@ String removeSpaces(String input) {
   return output;
 }
 
-// Create discovery payload
+// Create default discovery payload
 void publishMQTTDiscovery(String name, String deviceType,	String icon, String unitOfMeasurement, String deviceClass, String stateClass, String entityCategory, String stateTopic) 
 {
     // Construct IDs
@@ -534,6 +749,7 @@ void publishMQTTDiscovery(String name, String deviceType,	String icon, String un
     publishMessage(topic.c_str(), payload.c_str(), true);
 }
 
+// Create a specific climate discovery payload
 void publishMQTTClimateDiscovery(String name, String deviceType) 
 {
     // Construct IDs
@@ -621,32 +837,7 @@ void sendDiscoveries()
   publishMQTTClimateDiscovery("thermostat", "climate"); 
 }
 
-void printMQTTTopics()
-{
-  // Print used MQTT topics
-  Serial.println("MQTT Topic:");
-  Serial.println("    [availability_topic]: ");
-  Serial.println(String("       home/") + deviceName + String("/availability"));
-  Serial.println("    [ota_query_topic]: ");
-  Serial.println("        home/ota/query");
-  Serial.println("    [parameter_request_topic]: ");
-  Serial.println("        home/parameters/request");
-  Serial.println("    [parameter_response_topic]: ");
-  Serial.println(String("       home/") + deviceName + String("/parameters"));
-  Serial.println("    [ota_status_topic]");
-  Serial.println(String("       home/") + deviceName + String("/ota/status"));
-  Serial.println("    [ota_response_topic]");
-  Serial.println(String("       home/") + deviceName + String("/ota/response"));
-  Serial.println("    [log_info_topic]: ");
-  Serial.println(String("       home/") + deviceName + String("/log/info"));
-  Serial.println("    [log_warning_topic]");
-  Serial.println(String("       home/") + deviceName + String("/log/warning"));
-  Serial.println("    [log_error_topic]");
-  Serial.println(String("       home/") + deviceName + String("/log/error"));
-  Serial.println("    [command_topic]: ");
-  Serial.println(String("       home/") + deviceName + String("/command"));
-}
-
+// Handle target temperature received via MQTT
 void handleTemperature(String setTemp)
 {
   tempGoal = setTemp.toInt();
@@ -666,6 +857,7 @@ void handleTemperature(String setTemp)
   setTemperature(tempGoal,celsius);
 }
 
+// Handle modes received via MQTT
 void handleMode(String setMode)
 {
   if(setMode == "auto")
@@ -698,6 +890,21 @@ void handleMode(String setMode)
     publishMessage(mode_topic, mode, false);
     publishMessage(climate_mode_state_topic, mode, false);
   }
+  if(setMode == "cool")
+  {
+    autoMode = false;
+    mode = "cool";
+    Serial.print("    [RPC] Mode: ");
+    Serial.println(autoMode);
+
+    // Save mode setup to EEPROM
+    EEPROM.write(MODE_ADDRESS, autoMode);
+    EEPROM.commit();
+
+    // Just an response example
+    publishMessage(mode_topic, mode, false);
+    publishMessage(climate_mode_state_topic, mode, false);
+  }
 }
 
 // Handle Commands Received via MQTT
@@ -718,7 +925,16 @@ void handleCommand(String message)
     Serial.println("Command received: Parameter Send");
     sendParameters();
   }
-
+  if (message == "send discoveries") 
+  {
+    Serial.println("Command received: Discovery Send");
+    sendDiscoveries();
+  }
+  if (message == "servo off") 
+  {
+    Serial.println("Command received: Servo Off");
+    servo.detach();
+  }
 }
 
 // Handle Parameters Received via MQTT
@@ -762,6 +978,33 @@ void handleParameters(const String& jsonPayload)
     Serial.println(tempCalibration);
 }
 
+// Handle Parameters Received via MQTT
+void handleTemperatureProgram(const String& jsonPayload) 
+{
+    // Create a JSON document (adjust size if needed)
+    StaticJsonDocument<1024> doc;
+
+    DeserializationError error = deserializeJson(doc, jsonPayload);
+    if (error) 
+    {
+        Serial.print("JSON Parsing Failed: ");
+        Serial.println(error.c_str());
+        return;
+    }
+
+    const char* days[] = {"Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"};
+    
+    for (int d = 0; d < 7; d++) {
+      JsonArray dayTemps = doc[days[d]];
+      for (int h = 0; h < 24; h++) {
+        tempSchedule[d][h] = dayTemps[h];
+      }
+    }
+    
+    Serial.println("Updated temperature schedule received!");
+}
+
+// Send back received parameters to the server
 void sendParameters()
 {
   publishMessage(ontemperature_topic, onTemperature, true);
@@ -773,16 +1016,10 @@ void sendParameters()
   publishMessage(tempoffset_topic, tempCalibration, true);
 }
 
-/************************** LCD Icons ***********************************/
+/************************** Setup function ***********************************/
 
-byte termometru[8]={B00100, B01010, B01010, B01110, B01110, B11111, B11111, B01110};    //icon for termometer
-byte picatura[8]={B00100, B00100, B01010, B01010, B10001, B10001, B10001, B01110};      //icon for water droplet
-byte wifiON[8] = {B00000, B00000, B00001, B00011, B00111, B01111, B11111, B00000};      //icon for wifi ON
-byte wifiOFF[8] = {B10100, B01000, B10100, B00001, B00011, B00111, B01111, B11111};     //icon for wifi OFF
-byte heatOn[8] = {B00000, B10101, B10101, B10101, B10101, B00000, B11111, B10101};      //icon for heating ON
-byte heatOff[8] = {B00000, B00000, B00000, B00000, B00000, B00000, B11111, B10101};     //icon for heating OFF
-
-void setup() {
+void setup() 
+{
 
   // start the serial connection
   Serial.begin(115200);
@@ -920,338 +1157,116 @@ void setup() {
 
 }
 
-void loop() {
+/************************** Main loop ***********************************/
+
+void loop() 
+{
 
   // Store the current computer time
   unsigned long currentMillis = millis();
 
   client.loop();
 
-  if (!client.connected()) 
-  {
-    // Lost connection
-    if (currentMillis - previousMillis1 >= refreshRate * 1000) 
-    { 
-        // Going to safe mode
-        previousMillis1 = currentMillis;
-        Serial.println("--------------------------------------");  
-        Serial.println("WiFi connection: Not Connected");
+  if (currentMillis - previousMillis1 >= refreshRate * 1000) 
+  { 
+    previousMillis1 = currentMillis;
 
-        // Get hour of day
-        timeStamp = rtc.getHour(true);
-        timeMinutes = rtc.getMinute();
-        Serial.print("Time: ");
-        Serial.print(timeStamp);
-        Serial.print(" : ");
-        Serial.println(timeMinutes);
+    // Uptime calculation
+    refreshLoop = refreshLoop + 1;
+    upTime = refreshLoop * refreshRate/60; //Return uptime in minutes
+    Serial.print("Loop Number: ");
+    Serial.println(refreshLoop);
 
-        // Read temperature data from BME280
-        celsius = bme.readTemperature() + tempCalibration;
-      
-        // Read humidity data from BME280
-        hum = bme.readHumidity() + humCalibration;
-        
-        // Read pressure data from BME280
-        pres = (bme.readPressure()/ 100.0F) + presCalibration;
+    // Get time information
+    timeDay = rtc.getDayOfWeek() - 1;
+    timeStamp = rtc.getHour(true);
+    timeMinutes = rtc.getMinute();
+    Serial.print("Day: ");
+    Serial.print(timeDay);
+    Serial.print("Time: ");
+    Serial.print(timeStamp);
+    Serial.print(" : ");
+    Serial.println(timeMinutes);
 
-        // Set servo if automatic mode on
-        if (autoMode)
-        {
-          tempGoal = tempProgram[timeStamp];
-        }
+    // Read temperature data from BME280
+    celsius = bme.readTemperature() + tempCalibration;     
+    Serial.print("Celsius: ");
+    Serial.print(celsius);
+    Serial.println(" C");
+  
+    // Read humidity data from BME280
+    hum = bme.readHumidity() + humCalibration;
+    Serial.print("Humidity: ");
+    Serial.print(hum);
+    Serial.println(" %");
+    
+    // Read pressure data from BME280
+    pres = (bme.readPressure()/ 100.0F) + presCalibration;       
+    Serial.print("Pressure: ");
+    Serial.print(pres);
+    Serial.println(" hPa");
 
-        // In safe mode -> set temperature to latest tempGoal
-        setTemperature(tempGoal,celsius);
-
-        // Trying to reconnect
-        connectWifi();
-        connectMQTT();
-        
-        // LCD Screen refresh
-        lcdRefresh2("OFFLINE",timeStamp,timeMinutes, celsius, hum, heaterSetting, tempGoal, autoMode);
-    } 
-  }
-  else
-  {  
-    // Measurment refresh loop
-    if (currentMillis - previousMillis1 >= refreshRate * 1000) 
+    if (!client.connected()) 
     {
-        previousMillis1 = currentMillis;
-        Serial.println("--------------------------------------");
+      Serial.println("--------------------------------------");  
+      Serial.println("MQTT connection: Not Connected");
 
-        Serial.println("WiFi connection: Connected");
+      // Set servo if automatic mode on
+      if (autoMode)
+      {
+        tempGoal = tempProgram[timeStamp];
+      }
 
-        // Uptime calculation
-        refreshLoop = refreshLoop + 1;
-        upTime = refreshLoop * refreshRate/60; //Return uptime in minutes
-        Serial.print("Loop Number: ");
-        Serial.println(refreshLoop);
+      // In safe mode -> set temperature to latest tempGoal
+      setTemperature(tempGoal,celsius);
+
+      // Trying to reconnect
+      connectWifi();
+      connectMQTT();
       
-        // Get hour of day
-        timeStamp = rtc.getHour(true);
-        timeMinutes = rtc.getMinute();
-        Serial.print("Time: ");
-        Serial.print(timeStamp);
-        Serial.print(" : ");
-        Serial.println(timeMinutes);
-      
-        // Read and send temperature data from BME280
-        celsius = bme.readTemperature() + tempCalibration;     
-        Serial.print("Celsius: ");
-        Serial.print(celsius);
-        Serial.println(" C");
-      
-        // Read and send humidity data from BME280
-        hum = bme.readHumidity() + humCalibration;
-        Serial.print("Humidity: ");
-        Serial.print(hum);
-        Serial.println(" %");
-        
-        // Read and send pressure data from BME280
-        pres = (bme.readPressure()/ 100.0F) + presCalibration;       
-        Serial.print("Pressure: ");
-        Serial.print(pres);
-        Serial.println(" hPa");
+      // LCD Screen refresh
+      lcdRefresh("OFFLINE",timeStamp,timeMinutes, celsius, hum, heaterSetting, tempGoal, autoMode);
+    }
+    else
+    {
+      Serial.println("--------------------------------------");
+      Serial.println("MQTT connection: Connected");
 
-        publishMessage(temperature_topic, celsius, false);
-        publishMessage(humidity_topic, hum, false);
-        publishMessage(pressure_topic, pres, false);
-        publishMessage(uptime_topic, upTime, false);
-        publishMessage(tempgoal_topic, tempGoal, false);
-        publishMessage(mode_topic, mode, false);   
-      
-        // Set servo if automatic mode on
-        if (autoMode)
-        {
-          tempGoal = tempProgram[timeStamp];
-        }
+      // Send telemetry data to the server
+      publishMessage(temperature_topic, celsius, false);
+      publishMessage(humidity_topic, hum, false);
+      publishMessage(pressure_topic, pres, false);
+      publishMessage(uptime_topic, upTime, false);
+      publishMessage(tempgoal_topic, tempGoal, false);
+      publishMessage(mode_topic, mode, false);   
+    
+      // Check for active mode
+      if (autoMode)
+      {
+        tempGoal = tempProgram[timeStamp];
+      }
 
-        Serial.print("Temperature Goal: ");
-        Serial.println(tempGoal);
+      Serial.print("Temperature Goal: ");
+      Serial.println(tempGoal);
 
-        setTemperature(tempGoal,celsius);
+      // Set heating 
+      setTemperature(tempGoal,celsius);
 
-        // Send dashboard data
-        publishMessage(climate_temperature_current_topic, celsius, false);
-        publishMessage(climate_temperature_state_topic, tempGoal, false);
-        publishMessage(climate_mode_state_topic, mode, false);
+      // Send dashboard data
+      publishMessage(climate_temperature_current_topic, celsius, false);
+      publishMessage(climate_temperature_state_topic, tempGoal, false);
+      publishMessage(climate_mode_state_topic, mode, false);
 
-        // Announce availability
-        publishMessage(availability_topic, "connected", true);
+      // Refresh availability
+      publishMessage(availability_topic, "connected", false);
 
-        // LCD Screen refresh
-        lcdRefresh2("ONLINE",timeStamp,timeMinutes, celsius, hum, heaterSetting, tempGoal, autoMode);
+      // Refresh LCD Screen
+      lcdRefresh("ONLINE",timeStamp,timeMinutes, celsius, hum, heaterSetting, tempGoal, autoMode);
 
-        Serial.println("--------------------------------------");
+      Serial.println("--------------------------------------");
     }
   }
 
   // Add delay to the loop
   delay(200);
-}
-
-bool connectWifi()
-{
-  int attempts = 1;
-  
-  // Connect to WiFi network
-  WiFi.begin(WIFI_SSID, WIFI_PASS);
-
-  // Wait for connection
-  while (WiFi.status() != WL_CONNECTED) {
-    attempts = attempts + 1;
-    delay(500);
-    Serial.print(".");
-
-    if(attempts == 50){
-      // Failed to connect
-      Serial.println("Failed to connect to WiFi");
-      return false;
-    }
-  }
-  
-  configurationUrl = WiFi.localIP().toString();
-
-  Serial.println("");
-  Serial.print("Connected to ");
-  Serial.println(WIFI_SSID);
-  Serial.print("IP address: ");
-  Serial.println(WiFi.localIP());
-
-  return true;
-}
-
-void restartESP()
-{
-  Serial.println("Rebooting ESP32");
-  lcd.clear();
-  lcd.setCursor(0,0);
-  lcd.print("REBOOTING");
-  delay(2000);
-  esp_restart();
-}
-
-void servoMove (int turnAngle) 
-{
-  //This function moves the servo slower with an adjustable angle increment and delay  
-  if(turnAngle>previousAngle)
-  {
-    for(int i=previousAngle; i<=turnAngle; i+=angleIncrement)
-    {
-      servo.write(i);
-      delay(incrementDelay);
-    }
-  }
-
-  if(turnAngle<previousAngle)
-  {
-    for(int i=previousAngle; i>=turnAngle; i-=angleIncrement)
-    {
-      servo.write(i);
-      delay(incrementDelay);
-    }
-  }
-
-  previousAngle = turnAngle;
-}
-
-void temperatureControl(float currentTemp, int setTemp) 
-{    
-    //This function contains the temperature control logic
-    if(currentTemp > setTemp + tempControlRange) 
-    {
-      //Current temperature higher than set temperature range --> OFF
-      heaterSetting = offTemperature;
-    }
-
-    if(currentTemp < setTemp - tempControlRange) 
-    {
-      //Current temperature lower than set temperature range --> ON
-      heaterSetting = onTemperature;
-    }
-}
-
-void setTemperature(int tempGoal, float celsius)
-{
-  //Heater control logic to modify heatingSetting parameter
-  temperatureControl(celsius, tempGoal);
-  
-  Serial.print("Heater Setting: ");
-  Serial.println(heaterSetting);
-  
-  //Send heater setting
-  if(heaterSetting == onTemperature)
-  {
-    publishMessage(heating_topic, true, false);
-  }
-  else 
-  {
-    publishMessage(heating_topic, false, false);
-  }
-  
-  //Convert the selected temperature to servo position
-  int angle = servoConvertA * heaterSetting + servoConvertB;
-  
-  Serial.print("Servo Angle: ");
-  Serial.println(angle);
-  
-  //Check if servo position is valid
-  if(angle < 5) 
-  {
-    angle = 5;
-  }
-  else if(angle > 160) 
-  {
-    angle = 160;
-  }
-  
-  //Send order to the servo
-  servoMove(angle);
-  
-  //Save last servo position to the EEPROM
-  EEPROM.write(SERVO_ADDRESS, angle);
-  EEPROM.commit();
-}
-
-void lcdRefresh(String connectionStatus, int timeHour, int timeminutes, double temperature, double humidity)
-{
-        // LCD Screen refresh
-        lcd.clear();
-        lcd.setCursor(0,0); 
-        lcd.print(connectionStatus);
-        if(connectionStatus == "OFFLINE"){lcd.print("  ");}
-        else {lcd.print("   ");}
-        lcd.print(char(1));
-        lcd.print(" ");
-        lcd.print(temperature,1);
-        lcd.print((char)223); 
-        lcd.setCursor(0,1);
-        if(timeHour < 10) {lcd.print(" ");}
-        lcd.print(timeHour);
-        lcd.print(":");
-        if(timeminutes < 10) {lcd.print("0");}
-        lcd.print(timeminutes); 
-        lcd.print("    ");
-        lcd.print(char(2));
-        lcd.print(" ");
-        lcd.print(humidity,1);
-        lcd.print("%");
-}
-
-void lcdRefresh2(String connectionStatus, int timeHour, int timeminutes, double temperature, double humidity, int heatingSetting, int temperatureGoal, bool autoMode)
-{
-        // LCD Screen refresh
-        lcd.clear();
-        lcd.setCursor(0,0);
-        if(timeHour < 10) {lcd.print(" ");}
-        lcd.print(timeHour);
-        lcd.print(":");
-        if(timeminutes < 10) {lcd.print("0");}
-        lcd.print(timeminutes); 
-        lcd.print(" ");
-        if(connectionStatus == "OFFLINE"){lcd.print(char(4));}
-        else {lcd.print(char(3));}
-        lcd.print("  ");
-        lcd.print(char(2));
-        lcd.print(" ");
-        lcd.print(humidity,1);
-        lcd.print("%"); 
-        lcd.setCursor(0,1);
-        if(autoMode){lcd.print("A");}
-        else {lcd.print("M");}
-        lcd.print("|");
-        lcd.print(temperatureGoal);
-        lcd.print("| ");
-        if(heatingSetting == onTemperature){lcd.print(char(5));}
-        else {lcd.print(char(6));}
-        lcd.print("  ");
-        lcd.print(char(1));
-        lcd.print(" ");
-        lcd.print(temperature,1);
-        lcd.print((char)223);
-}
-
-void printLocalTime(){
-  struct tm timeinfo;
-  if(!getLocalTime(&timeinfo)){
-    Serial.println("Failed to obtain time");
-    return;
-  }
-  Serial.println(&timeinfo, "%A, %B %d %Y %H:%M:%S");
-  Serial.print("Day of week: ");
-  Serial.println(&timeinfo, "%A");
-  Serial.print("Month: ");
-  Serial.println(&timeinfo, "%B");
-  Serial.print("Day of Month: ");
-  Serial.println(&timeinfo, "%d");
-  Serial.print("Year: ");
-  Serial.println(&timeinfo, "%Y");
-  Serial.print("Hour: ");
-  Serial.println(&timeinfo, "%H");
-  Serial.print("Hour (12 hour format): ");
-  Serial.println(&timeinfo, "%I");
-  Serial.print("Minute: ");
-  Serial.println(&timeinfo, "%M");
-  Serial.print("Second: ");
-  Serial.println(&timeinfo, "%S");
 }
