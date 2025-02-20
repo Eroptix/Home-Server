@@ -33,7 +33,7 @@
 
 // Device-specific settings
 const char* deviceName = "thermostat";
-const char* currentSwVersion = "1.2.2";
+const char* currentSwVersion = "1.3.0";
 const char* deviceModel = "ESP32-NodeMCU";
 const char* deviceManufacturer = "BTM Engineering";
 String configurationUrl = "";
@@ -109,384 +109,6 @@ LiquidCrystal_I2C lcd = LiquidCrystal_I2C(0x27, 16, 2);
 
 #define SERVO_PIN 2
 #define EEPROM_SIZE 30
-
-/************************** Device Functions ***********************************/
-
-// Open WiFi connection
-bool connectWifi()
-{
-  int attempts = 1;
-  
-  // Connect to WiFi network
-  WiFi.begin(WIFI_SSID, WIFI_PASS);
-
-  // Wait for connection
-  while (WiFi.status() != WL_CONNECTED) {
-    attempts = attempts + 1;
-    delay(500);
-    Serial.print(".");
-
-    if(attempts == 50){
-      // Failed to connect
-      Serial.println("Failed to connect to WiFi");
-      return false;
-    }
-  }
-  
-  configurationUrl = WiFi.localIP().toString();
-
-  Serial.println("");
-  Serial.print("Connected to ");
-  Serial.println(WIFI_SSID);
-  Serial.print("IP address: ");
-  Serial.println(WiFi.localIP());
-
-  return true;
-}
-
-// Restart ESP device
-void restartESP()
-{
-  Serial.println("Rebooting ESP32");
-  lcd.clear();
-  lcd.setCursor(0,0);
-  lcd.print("REBOOTING");
-  delay(2000);
-  esp_restart();
-}
-
-// Servo movement logic
-void servoMove (int turnAngle) 
-{
-  // Check if servo is detached
-  if(servo.attached() == false)
-  {
-    servo.write(previousAngle);
-    servo.attach(SERVO_PIN);
-  }
-  
-  //This function moves the servo slower with an adjustable angle increment and delay  
-  if(turnAngle>previousAngle)
-  {
-    for(int i=previousAngle; i<=turnAngle; i+=angleIncrement)
-    {
-      servo.write(i);
-      delay(incrementDelay);
-    }
-  }
-
-  if(turnAngle<previousAngle)
-  {
-    for(int i=previousAngle; i>=turnAngle; i-=angleIncrement)
-    {
-      servo.write(i);
-      delay(incrementDelay);
-    }
-  }
-
-  previousAngle = turnAngle;
-}
-
-// Temperature control logic
-void temperatureControl(float currentTemp, int setTemp) 
-{    
-    //This function contains the temperature control logic
-    if(currentTemp > setTemp + tempControlRange) 
-    {
-      //Current temperature higher than set temperature range --> OFF
-      heaterSetting = offTemperature;
-    }
-
-    if(currentTemp < setTemp - tempControlRange) 
-    {
-      //Current temperature lower than set temperature range --> ON
-      heaterSetting = onTemperature;
-    }
-}
-
-// Set goal temperature and move servo
-void setTemperature(int tempGoal, float celsius)
-{
-  //Heater control logic to modify heatingSetting parameter
-  temperatureControl(celsius, tempGoal);
-  
-  Serial.print("Heater Setting: ");
-  Serial.println(heaterSetting);
-  
-  //Send heater setting
-  if(heaterSetting == onTemperature)
-  {
-    publishMessage(heating_topic, true, false);
-  }
-  else 
-  {
-    publishMessage(heating_topic, false, false);
-  }
-  
-  //Convert the selected temperature to servo position
-  int angle = servoConvertA * heaterSetting + servoConvertB;
-  
-  Serial.print("Servo Angle: ");
-  Serial.println(angle);
-  
-  //Check if servo position is valid
-  if(angle < 5) 
-  {
-    angle = 5;
-  }
-  else if(angle > 160) 
-  {
-    angle = 160;
-  }
-  
-  //Send order to the servo
-  servoMove(angle);
-  
-  //Save last servo position to the EEPROM
-  EEPROM.write(SERVO_ADDRESS, angle);
-  EEPROM.commit();
-}
-
-// Refresh LCD display
-void lcdRefresh(String connectionStatus, int timeHour, int timeminutes, double temperature, double humidity, int heatingSetting, int temperatureGoal, bool autoMode)
-{
-        // LCD Screen refresh
-        lcd.clear();
-        lcd.setCursor(0,0);
-        if(timeHour < 10) {lcd.print(" ");}
-        lcd.print(timeHour);
-        lcd.print(":");
-        if(timeminutes < 10) {lcd.print("0");}
-        lcd.print(timeminutes); 
-        lcd.print(" ");
-        if(connectionStatus == "OFFLINE"){lcd.print(char(4));}
-        else {lcd.print(char(3));}
-        lcd.print("  ");
-        lcd.print(char(2));
-        lcd.print(" ");
-        lcd.print(humidity,1);
-        lcd.print("%"); 
-        lcd.setCursor(0,1);
-        if(autoMode){lcd.print("A");}
-        else {lcd.print("M");}
-        lcd.print("|");
-        lcd.print(temperatureGoal);
-        lcd.print("| ");
-        if(heatingSetting == onTemperature){lcd.print(char(5));}
-        else {lcd.print(char(6));}
-        lcd.print("  ");
-        lcd.print(char(1));
-        lcd.print(" ");
-        lcd.print(temperature,1);
-        lcd.print((char)223);
-}
-
-// Display update LCD screen
-void lcdUpdate(String currentFW, String latestFW)
-{
-  lcd.clear();
-  lcd.setCursor(0,0);
-  lcd.print("Updating FW:");
-  lcd.setCursor(0,1);
-  lcd.print(" ");
-  lcd.print(currentFW);
-  lcd.print(" ->" );
-  lcd.print(latestFW);
-}
-
-// Print local time for debugging
-void printLocalTime()
-{
-  struct tm timeinfo;
-  if(!getLocalTime(&timeinfo)){
-    Serial.println("Failed to obtain time");
-    return;
-  }
-  Serial.println(&timeinfo, "%A, %B %d %Y %H:%M:%S");
-  Serial.print("Day of week: ");
-  Serial.println(&timeinfo, "%A");
-  Serial.print("Month: ");
-  Serial.println(&timeinfo, "%B");
-  Serial.print("Day of Month: ");
-  Serial.println(&timeinfo, "%d");
-  Serial.print("Year: ");
-  Serial.println(&timeinfo, "%Y");
-  Serial.print("Hour: ");
-  Serial.println(&timeinfo, "%H");
-  Serial.print("Hour (12 hour format): ");
-  Serial.println(&timeinfo, "%I");
-  Serial.print("Minute: ");
-  Serial.println(&timeinfo, "%M");
-  Serial.print("Second: ");
-  Serial.println(&timeinfo, "%S");
-}
-
-// Handle target temperature received via MQTT
-void handleTemperature(String setTemp)
-{
-  tempGoal = setTemp.toInt();
-  
-  // Turn off auto mode
-  handleMode("heat");
-  
-  // Save temperature goal to EEPROM
-  EEPROM.write(TEMP_ADDRESS, tempGoal);
-  EEPROM.commit();
-
-  Serial.print("    [RPC] Set new temperature goal: ");
-  Serial.println(tempGoal);
-
-  publishMessage(tempgoal_topic, tempGoal, false);
-
-  setTemperature(tempGoal,celsius);
-}
-
-// Handle modes received via MQTT
-void handleMode(String setMode)
-{
-  if(setMode == "auto")
-  {
-    autoMode = true;
-    mode = "auto";
-    Serial.print("    [RPC] Mode: ");
-    Serial.println(autoMode);
-
-    // Save mode setup to EEPROM
-    EEPROM.write(MODE_ADDRESS, autoMode);
-    EEPROM.commit();
-
-    // Just an response example
-    publishMessage(mode_topic, mode, false);
-    publishMessage(climate_mode_state_topic, mode, false);
-  }
-  if(setMode == "heat")
-  {
-    autoMode = false;
-    mode = "heat";
-    Serial.print("    [RPC] Mode: ");
-    Serial.println(autoMode);
-
-    // Save mode setup to EEPROM
-    EEPROM.write(MODE_ADDRESS, autoMode);
-    EEPROM.commit();
-
-    // Just an response example
-    publishMessage(mode_topic, mode, false);
-    publishMessage(climate_mode_state_topic, mode, false);
-  }
-  if(setMode == "cool")
-  {
-    autoMode = false;
-    mode = "cool";
-    Serial.print("    [RPC] Mode: ");
-    Serial.println(autoMode);
-
-    // Save mode setup to EEPROM
-    EEPROM.write(MODE_ADDRESS, autoMode);
-    EEPROM.commit();
-
-    // Just an response example
-    publishMessage(mode_topic, mode, false);
-    publishMessage(climate_mode_state_topic, mode, false);
-  }
-}
-
-// Handle commands received via MQTT
-void handleCommand(String message) 
-{
-  if (message == "reboot") 
-  {
-    Serial.println("Command received: Reboot");
-    restartESP();
-  }
-  if (message == "request parameters") 
-  {
-    Serial.println("Command received: Parameter Request");
-    requestParameters();
-  }
-  if (message == "send parameters") 
-  {
-    Serial.println("Command received: Parameter Send");
-    sendParameters();
-  }
-  if (message == "send discoveries") 
-  {
-    Serial.println("Command received: Discovery Send");
-    sendDiscoveries();
-  }
-  if (message == "servo off") 
-  {
-    Serial.println("Command received: Servo Off");
-    servo.detach();
-  }
-}
-
-// Handle parameters received via MQTT
-void handleParameters(const String& jsonPayload) 
-{
-    // Create a JSON document (adjust size if needed)
-    StaticJsonDocument<1024> doc;
-
-    // Deserialize the JSON
-    DeserializationError error = deserializeJson(doc, jsonPayload);
-    if (error) {
-        Serial.print("JSON Parsing Failed: ");
-        Serial.println(error.c_str());
-        return;
-    }
-
-    // Extract values
-    onTemperature = doc["onTemperature"].as<int>();
-    offTemperature = doc["offTemperature"].as<int>();
-    tempControlRange = doc["tempControlRange"].as<float>();
-    safetyTemp = doc["safetyTemp"].as<int>();
-    refreshRate = doc["refreshRate"].as<int>();
-    timeOffset = doc["timeOffset"].as<int>();
-    tempCalibration = doc["tempOffset"].as<float>();
-
-    // Print extracted values
-    Serial.println("  Extracted Parameters:");
-    Serial.print("    onTemperature: ");
-    Serial.println(onTemperature);
-    Serial.print("    offTemperature: ");
-    Serial.println(offTemperature);
-    Serial.print("    tempControlRange: ");
-    Serial.println(tempControlRange);
-    Serial.print("    safetyTemp: ");
-    Serial.println(safetyTemp);
-    Serial.print("    refreshRate: ");
-    Serial.println(refreshRate);
-    Serial.print("    timeOffset: ");
-    Serial.println(timeOffset);
-    Serial.print("    tempOffset: ");
-    Serial.println(tempCalibration);
-}
-
-// Handle parameters received via MQTT
-void handleTemperatureProgram(const String& jsonPayload) 
-{
-    // Create a JSON document (adjust size if needed)
-    StaticJsonDocument<1024> doc;
-
-    DeserializationError error = deserializeJson(doc, jsonPayload);
-    if (error) 
-    {
-        Serial.print("JSON Parsing Failed: ");
-        Serial.println(error.c_str());
-        return;
-    }
-
-    const char* days[] = {"Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"};
-    
-    for (int d = 0; d < 7; d++) {
-      JsonArray dayTemps = doc[days[d]];
-      for (int h = 0; h < 24; h++) {
-        tempSchedule[d][h] = dayTemps[h];
-      }
-    }
-    
-    Serial.println("Updated temperature schedule received!");
-}
 
 /************************** Clock Setup ***********************************/
 
@@ -582,9 +204,6 @@ bool connectMQTT()
   while (!client.connected() && attempts < 3) 
   {
     if ( client.connect(mqtt_client_id) ) {
-
-      // Print MQTT topics used
-      printMQTTTopics();
 
       // Subscribe to command topics
       subscribeTopic(ota_response_topic);
@@ -1211,7 +830,7 @@ void loop()
     Serial.println(refreshLoop);
 
     // Get time information
-    timeDay = rtc.getDayOfWeek() - 1;
+    timeDay = rtc.getDayofWeek();
     timeStamp = rtc.getHour(true);
     timeMinutes = rtc.getMinute();
     Serial.print("Day: ");
@@ -1302,4 +921,382 @@ void loop()
 
   // Add delay to the loop
   delay(200);
+}
+
+/************************** Device Functions ***********************************/
+
+// Open WiFi connection
+bool connectWifi()
+{
+  int attempts = 1;
+  
+  // Connect to WiFi network
+  WiFi.begin(WIFI_SSID, WIFI_PASS);
+
+  // Wait for connection
+  while (WiFi.status() != WL_CONNECTED) {
+    attempts = attempts + 1;
+    delay(500);
+    Serial.print(".");
+
+    if(attempts == 50){
+      // Failed to connect
+      Serial.println("Failed to connect to WiFi");
+      return false;
+    }
+  }
+  
+  configurationUrl = WiFi.localIP().toString();
+
+  Serial.println("");
+  Serial.print("Connected to ");
+  Serial.println(WIFI_SSID);
+  Serial.print("IP address: ");
+  Serial.println(WiFi.localIP());
+
+  return true;
+}
+
+// Restart ESP device
+void restartESP()
+{
+  Serial.println("Rebooting ESP32");
+  lcd.clear();
+  lcd.setCursor(0,0);
+  lcd.print("REBOOTING");
+  delay(2000);
+  esp_restart();
+}
+
+// Servo movement logic
+void servoMove (int turnAngle) 
+{
+  // Check if servo is detached
+  if(servo.attached() == false)
+  {
+    servo.write(previousAngle);
+    servo.attach(SERVO_PIN);
+  }
+  
+  //This function moves the servo slower with an adjustable angle increment and delay  
+  if(turnAngle>previousAngle)
+  {
+    for(int i=previousAngle; i<=turnAngle; i+=angleIncrement)
+    {
+      servo.write(i);
+      delay(incrementDelay);
+    }
+  }
+
+  if(turnAngle<previousAngle)
+  {
+    for(int i=previousAngle; i>=turnAngle; i-=angleIncrement)
+    {
+      servo.write(i);
+      delay(incrementDelay);
+    }
+  }
+
+  previousAngle = turnAngle;
+}
+
+// Temperature control logic
+void temperatureControl(float currentTemp, int setTemp) 
+{    
+    //This function contains the temperature control logic
+    if(currentTemp > setTemp + tempControlRange) 
+    {
+      //Current temperature higher than set temperature range --> OFF
+      heaterSetting = offTemperature;
+    }
+
+    if(currentTemp < setTemp - tempControlRange) 
+    {
+      //Current temperature lower than set temperature range --> ON
+      heaterSetting = onTemperature;
+    }
+}
+
+// Set goal temperature and move servo
+void setTemperature(int tempGoal, float celsius)
+{
+  //Heater control logic to modify heatingSetting parameter
+  temperatureControl(celsius, tempGoal);
+  
+  Serial.print("Heater Setting: ");
+  Serial.println(heaterSetting);
+  
+  //Send heater setting
+  if(heaterSetting == onTemperature)
+  {
+    publishMessage(heating_topic, true, false);
+  }
+  else 
+  {
+    publishMessage(heating_topic, false, false);
+  }
+  
+  //Convert the selected temperature to servo position
+  int angle = servoConvertA * heaterSetting + servoConvertB;
+  
+  Serial.print("Servo Angle: ");
+  Serial.println(angle);
+  
+  //Check if servo position is valid
+  if(angle < 5) 
+  {
+    angle = 5;
+  }
+  else if(angle > 160) 
+  {
+    angle = 160;
+  }
+  
+  //Send order to the servo
+  servoMove(angle);
+  
+  //Save last servo position to the EEPROM
+  EEPROM.write(SERVO_ADDRESS, angle);
+  EEPROM.commit();
+}
+
+// Refresh LCD display
+void lcdRefresh(String connectionStatus, int timeHour, int timeminutes, double temperature, double humidity, int heatingSetting, int temperatureGoal, bool autoMode)
+{
+        // LCD Screen refresh
+        lcd.clear();
+        lcd.setCursor(0,0);
+        if(timeHour < 10) {lcd.print(" ");}
+        lcd.print(timeHour);
+        lcd.print(":");
+        if(timeminutes < 10) {lcd.print("0");}
+        lcd.print(timeminutes); 
+        lcd.print(" ");
+        if(connectionStatus == "OFFLINE"){lcd.print(char(4));}
+        else {lcd.print(char(3));}
+        lcd.print("  ");
+        lcd.print(char(2));
+        lcd.print(" ");
+        lcd.print(humidity,1);
+        lcd.print("%"); 
+        lcd.setCursor(0,1);
+        if(autoMode){lcd.print("A");}
+        else {lcd.print("M");}
+        lcd.print("|");
+        lcd.print(temperatureGoal);
+        lcd.print("| ");
+        if(heatingSetting == onTemperature){lcd.print(char(5));}
+        else {lcd.print(char(6));}
+        lcd.print("  ");
+        lcd.print(char(1));
+        lcd.print(" ");
+        lcd.print(temperature,1);
+        lcd.print((char)223);
+}
+
+// Display update LCD screen
+void lcdUpdate(String currentFW, String latestFW)
+{
+  lcd.clear();
+  lcd.setCursor(0,0);
+  lcd.print("Updating FW:");
+  lcd.setCursor(0,1);
+  lcd.print(" ");
+  lcd.print(currentFW);
+  lcd.print(" ->" );
+  lcd.print(latestFW);
+}
+
+// Print local time for debugging
+void printLocalTime()
+{
+  struct tm timeinfo;
+  if(!getLocalTime(&timeinfo)){
+    Serial.println("Failed to obtain time");
+    return;
+  }
+  Serial.println(&timeinfo, "%A, %B %d %Y %H:%M:%S");
+  Serial.print("Day of week: ");
+  Serial.println(&timeinfo, "%A");
+  Serial.print("Month: ");
+  Serial.println(&timeinfo, "%B");
+  Serial.print("Day of Month: ");
+  Serial.println(&timeinfo, "%d");
+  Serial.print("Year: ");
+  Serial.println(&timeinfo, "%Y");
+  Serial.print("Hour: ");
+  Serial.println(&timeinfo, "%H");
+  Serial.print("Hour (12 hour format): ");
+  Serial.println(&timeinfo, "%I");
+  Serial.print("Minute: ");
+  Serial.println(&timeinfo, "%M");
+  Serial.print("Second: ");
+  Serial.println(&timeinfo, "%S");
+}
+
+// Handle target temperature received via MQTT
+void handleTemperature(String setTemp)
+{
+  tempGoal = setTemp.toInt();
+  
+  // Turn off auto mode
+  handleMode("heat");
+  
+  // Save temperature goal to EEPROM
+  EEPROM.write(TEMP_ADDRESS, tempGoal);
+  EEPROM.commit();
+
+  Serial.print("    [RPC] Set new temperature goal: ");
+  Serial.println(tempGoal);
+
+  publishMessage(tempgoal_topic, tempGoal, false);
+
+  setTemperature(tempGoal,celsius);
+}
+
+// Handle modes received via MQTT
+void handleMode(String setMode)
+{
+  if(setMode == "auto")
+  {
+    autoMode = true;
+    mode = "auto";
+    Serial.print("    [RPC] Mode: ");
+    Serial.println(autoMode);
+
+    // Save mode setup to EEPROM
+    EEPROM.write(MODE_ADDRESS, autoMode);
+    EEPROM.commit();
+
+    // Just an response example
+    publishMessage(mode_topic, mode, false);
+    publishMessage(climate_mode_state_topic, mode, false);
+  }
+  if(setMode == "heat")
+  {
+    autoMode = false;
+    mode = "heat";
+    Serial.print("    [RPC] Mode: ");
+    Serial.println(autoMode);
+
+    // Save mode setup to EEPROM
+    EEPROM.write(MODE_ADDRESS, autoMode);
+    EEPROM.commit();
+
+    // Just an response example
+    publishMessage(mode_topic, mode, false);
+    publishMessage(climate_mode_state_topic, mode, false);
+  }
+  if(setMode == "cool")
+  {
+    autoMode = false;
+    mode = "cool";
+    Serial.print("    [RPC] Mode: ");
+    Serial.println(autoMode);
+
+    // Save mode setup to EEPROM
+    EEPROM.write(MODE_ADDRESS, autoMode);
+    EEPROM.commit();
+
+    // Just an response example
+    publishMessage(mode_topic, mode, false);
+    publishMessage(climate_mode_state_topic, mode, false);
+  }
+}
+
+// Handle commands received via MQTT
+void handleCommand(String message) 
+{
+  if (message == "reboot") 
+  {
+    Serial.println("Command received: Reboot");
+    restartESP();
+  }
+  if (message == "request parameters") 
+  {
+    Serial.println("Command received: Parameter Request");
+    requestParameters();
+  }
+  if (message == "send parameters") 
+  {
+    Serial.println("Command received: Parameter Send");
+    sendParameters();
+  }
+  if (message == "send discoveries") 
+  {
+    Serial.println("Command received: Discovery Send");
+    sendDiscoveries();
+  }
+  if (message == "servo off") 
+  {
+    Serial.println("Command received: Servo Off");
+    servo.detach();
+  }
+}
+
+// Handle parameters received via MQTT
+void handleParameters(const String& jsonPayload) 
+{
+    // Create a JSON document (adjust size if needed)
+    StaticJsonDocument<1024> doc;
+
+    // Deserialize the JSON
+    DeserializationError error = deserializeJson(doc, jsonPayload);
+    if (error) {
+        Serial.print("JSON Parsing Failed: ");
+        Serial.println(error.c_str());
+        return;
+    }
+
+    // Extract values
+    onTemperature = doc["onTemperature"].as<int>();
+    offTemperature = doc["offTemperature"].as<int>();
+    tempControlRange = doc["tempControlRange"].as<float>();
+    safetyTemp = doc["safetyTemp"].as<int>();
+    refreshRate = doc["refreshRate"].as<int>();
+    timeOffset = doc["timeOffset"].as<int>();
+    tempCalibration = doc["tempOffset"].as<float>();
+
+    // Print extracted values
+    Serial.println("  Extracted Parameters:");
+    Serial.print("    onTemperature: ");
+    Serial.println(onTemperature);
+    Serial.print("    offTemperature: ");
+    Serial.println(offTemperature);
+    Serial.print("    tempControlRange: ");
+    Serial.println(tempControlRange);
+    Serial.print("    safetyTemp: ");
+    Serial.println(safetyTemp);
+    Serial.print("    refreshRate: ");
+    Serial.println(refreshRate);
+    Serial.print("    timeOffset: ");
+    Serial.println(timeOffset);
+    Serial.print("    tempOffset: ");
+    Serial.println(tempCalibration);
+}
+
+// Handle parameters received via MQTT
+void handleTemperatureProgram(const String& jsonPayload) 
+{
+    // Create a JSON document (adjust size if needed)
+    StaticJsonDocument<1024> doc;
+
+    DeserializationError error = deserializeJson(doc, jsonPayload);
+    if (error) 
+    {
+        Serial.print("JSON Parsing Failed: ");
+        Serial.println(error.c_str());
+        return;
+    }
+
+    const char* days[] = {"Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"};
+    
+    for (int d = 0; d < 7; d++) {
+      JsonArray dayTemps = doc[days[d]];
+      for (int h = 0; h < 24; h++) {
+        tempSchedule[d][h] = dayTemps[h];
+      }
+    }
+    
+    Serial.println("Updated temperature schedule received!");
 }
