@@ -33,7 +33,7 @@
 
 // Device-specific settings
 const char* deviceName = "thermostat";
-const char* currentSwVersion = "1.3.0";
+const char* currentSwVersion = "1.3.2";
 const char* deviceModel = "ESP32-NodeMCU";
 const char* deviceManufacturer = "BTM Engineering";
 String configurationUrl = "";
@@ -830,12 +830,12 @@ void loop()
     Serial.println(refreshLoop);
 
     // Get time information
-    timeDay = rtc.getDayofWeek();
+    timeDay = rtc.getDayofWeek() - 1;
     timeStamp = rtc.getHour(true);
     timeMinutes = rtc.getMinute();
     Serial.print("Day: ");
     Serial.print(timeDay);
-    Serial.print("Time: ");
+    Serial.print("  Time: ");
     Serial.print(timeStamp);
     Serial.print(" : ");
     Serial.println(timeMinutes);
@@ -866,7 +866,7 @@ void loop()
       // Set servo if automatic mode on
       if (autoMode)
       {
-        tempGoal = tempProgram[timeStamp];
+        tempGoal = tempSchedule[timeDay][timeStamp];
       }
 
       // In safe mode -> set temperature to latest tempGoal
@@ -895,7 +895,7 @@ void loop()
       // Check for active mode
       if (autoMode)
       {
-        tempGoal = tempProgram[timeStamp];
+        tempGoal = tempSchedule[timeDay][timeStamp];
       }
 
       Serial.print("Temperature Goal: ");
@@ -1107,6 +1107,18 @@ void lcdUpdate(String currentFW, String latestFW)
   lcd.print(latestFW);
 }
 
+// Display MQTT command LCD screen
+void lcdCommand(String message)
+{
+  lcd.clear();
+  lcd.setCursor(0,0);
+  lcd.print("MQTT MESSAGE:");
+  lcd.setCursor(0,1);
+  lcd.print(" ");
+  lcd.print(message);
+  delay(5000);
+}
+
 // Print local time for debugging
 void printLocalTime()
 {
@@ -1210,26 +1222,31 @@ void handleCommand(String message)
   if (message == "reboot") 
   {
     Serial.println("Command received: Reboot");
+    lcdCommand("reboot");
     restartESP();
   }
   if (message == "request parameters") 
   {
     Serial.println("Command received: Parameter Request");
+    lcdCommand("rq parameter");
     requestParameters();
   }
   if (message == "send parameters") 
   {
     Serial.println("Command received: Parameter Send");
+    lcdCommand("sd parameter");
     sendParameters();
   }
   if (message == "send discoveries") 
   {
     Serial.println("Command received: Discovery Send");
+    lcdCommand("sd discovery");
     sendDiscoveries();
   }
   if (message == "servo off") 
   {
     Serial.println("Command received: Servo Off");
+    lcdCommand("servo off");
     servo.detach();
   }
 }
@@ -1273,13 +1290,15 @@ void handleParameters(const String& jsonPayload)
     Serial.println(timeOffset);
     Serial.print("    tempOffset: ");
     Serial.println(tempCalibration);
+
+    lcdCommand("rec parameters");
 }
 
 // Handle parameters received via MQTT
 void handleTemperatureProgram(const String& jsonPayload) 
 {
     // Create a JSON document (adjust size if needed)
-    StaticJsonDocument<1024> doc;
+    StaticJsonDocument<4096> doc;
 
     DeserializationError error = deserializeJson(doc, jsonPayload);
     if (error) 
@@ -1292,11 +1311,24 @@ void handleTemperatureProgram(const String& jsonPayload)
     const char* days[] = {"Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"};
     
     for (int d = 0; d < 7; d++) {
-      JsonArray dayTemps = doc[days[d]];
-      for (int h = 0; h < 24; h++) {
-        tempSchedule[d][h] = dayTemps[h];
-      }
+        Serial.print(days[d]);
+        Serial.print(": ");
+
+        if (!doc.containsKey(days[d])) {  // Ensure key exists
+            Serial.println(" (Missing Key!)");
+            continue;
+        }
+
+        JsonArray dayTemps = doc[days[d]];
+        for (int h = 0; h < 24 && h < dayTemps.size(); h++) {  // Prevent overflow
+            tempSchedule[d][h] = dayTemps[h];
+            Serial.print(tempSchedule[d][h]);  
+            Serial.print(" ");
+        }
+        Serial.println();  // Newline for readability
     }
+
+    lcdCommand("rec tempSchedule");
     
     Serial.println("Updated temperature schedule received!");
 }
