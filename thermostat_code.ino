@@ -1310,7 +1310,8 @@ void handleTemperatureProgram(const String& jsonPayload)
 
     const char* days[] = {"Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"};
     
-    for (int d = 0; d < 7; d++) {
+    for (int d = 0; d < 7; d++) 
+    {
         Serial.print(days[d]);
         Serial.print(": ");
 
