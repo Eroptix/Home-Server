@@ -73,7 +73,6 @@ unsigned long previousMillis1 = 0;
 
 // Temperature control parameters
 //  Time hour       [01,02,03,04,05,06,07,08,09,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24]
-int tempProgram[24] = {18,17,17,17,18,18,19,20,20,18,18,18,18,19,20,20,20,20,20,20,20,20,20,20};
 int tempSchedule[7][24];  // Store temperature schedule for each hour of the week
 int onTemperature = 22;
 int offTemperature = 14;
@@ -84,7 +83,10 @@ int safetyTemp = 18;
 bool autoMode = false;
 bool lcdMode = true;
 bool wifiStatus = false;
+int wifiStrength;
 String mode = "heat";
+bool requestedSchedule = false;
+bool requestedParameters = false;
 
 /*
     [DAY]       [00][01][02][03][04][05][06][07][08][09][10][11][12][13][14][15][16][17][18][19][20][21][22][23]
@@ -161,7 +163,8 @@ String log_error_topic =                    String("home/") + deviceName + Strin
 String command_topic =                      String("home/") + deviceName + String("/command");
 String uptime_topic =                       String("home/") + deviceName + String("/uptime");
 String firmware_topic =                     String("home/") + deviceName + String("/firmware");
-String ip_topic =                           String("home/") + deviceName + String("/ip");
+String ip_topic =                           String("home/") + deviceName + String("/wifi/ip");
+String wifi_strength =                      String("home/") + deviceName + String("/wifi/strength");
 
 // Sensors
 String temperature_topic =                  String("home/") + deviceName + String("/temperature");
@@ -710,12 +713,18 @@ void setup()
   delay(1000);
 
   // Request boot parameters
-  requestParameters();
-  delay(1000);
+  if(requestedParameters != true)
+  {
+    requestParameters();
+    delay(1000)
+  }
 
   // Request temperature schedule
-  requestTemperatureSchedule();
-  delay(1000);
+  if(requestedSchedule != true)
+  {
+    requestTemperatureSchedule();
+    delay(1000)
+  }
 
   // Verify received parameters
   sendParameters();
@@ -1290,6 +1299,9 @@ void handleParameters(const String& jsonPayload)
     Serial.println(timeOffset);
     Serial.print("    tempOffset: ");
     Serial.println(tempCalibration);
+
+    // Set parameter request bool to true
+    requestedParameters = true;
 
     lcdCommand("rec parameters");
 }
