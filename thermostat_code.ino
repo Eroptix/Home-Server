@@ -33,7 +33,7 @@
 
 // Device-specific settings
 const char* deviceName = "thermostat";
-const char* currentSwVersion = "1.3.2";
+const char* currentSwVersion = "1.3.3";
 const char* deviceModel = "ESP32-NodeMCU";
 const char* deviceManufacturer = "BTM Engineering";
 String configurationUrl = "";
@@ -101,13 +101,13 @@ int tempSchedule[7][24] =
 /*
     [DAY]       [00][01][02][03][04][05][06][07][08][09][10][11][12][13][14][15][16][17][18][19][20][21][22][23]
 {
-  "Monday":     [18, 18, 18, 18, 19, 21, 22, 22, 22, 21, 20, 19, 18, 18, 18, 18, 19, 20, 21, 21, 21, 20, 19, 18],
-  "Tuesday":    [18, 18, 18, 18, 19, 21, 22, 22, 22, 21, 20, 19, 18, 18, 18, 18, 19, 20, 21, 21, 21, 20, 19, 18],
-  "Wednesday":  [18, 18, 18, 18, 19, 21, 22, 22, 22, 21, 20, 19, 18, 18, 18, 18, 19, 20, 21, 21, 21, 20, 19, 18],
-  "Thursday":   [18, 18, 18, 18, 19, 21, 22, 22, 22, 21, 20, 19, 18, 18, 18, 18, 19, 20, 21, 21, 21, 20, 19, 18],
-  "Friday":     [18, 18, 18, 18, 19, 21, 22, 22, 22, 21, 20, 19, 18, 18, 18, 18, 19, 20, 21, 21, 21, 20, 19, 18],
-  "Saturday":   [19, 19, 19, 19, 20, 22, 23, 23, 23, 22, 21, 20, 19, 19, 19, 19, 20, 21, 22, 22, 22, 21, 20, 19],
-  "Sunday":     [19, 19, 19, 19, 20, 22, 23, 23, 23, 22, 21, 20, 19, 19, 19, 19, 20, 21, 22, 22, 22, 21, 20, 19]
+  "Monday":     [18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 19, 20, 20, 20, 20, 20, 20, 20, 19, 18],
+  "Tuesday":    [18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 19, 20, 20, 20, 20, 20, 20, 20, 19, 18],
+  "Wednesday":  [18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 19, 20, 20, 20, 20, 20, 20, 20, 19, 18],
+  "Thursday":   [18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 19, 20, 20, 20, 20, 20, 20, 20, 19, 18],
+  "Friday":     [18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 19, 20, 20, 20, 20, 20, 20, 20, 20, 20],
+  "Saturday":   [20, 18, 18, 18, 18, 18, 19, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20],
+  "Sunday":     [20, 18, 18, 18, 18, 18, 19, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 19]
 }
 */
 
@@ -910,7 +910,7 @@ void loop()
       Serial.println("MQTT connection: Connected");
 
       // Send diagnostic data to the server
-      publishMessage(wifi_strength_topic, wifiStrength, false);
+      publishMessage(wifi_strength_topic, (double)wifiStrength, false);
       publishMessage(uptime_topic, upTime, false);
       publishMessage(availability_topic, "connected", false);
 
@@ -1004,21 +1004,23 @@ void servoMove (int turnAngle)
     servo.attach(SERVO_PIN);
   }
 
-  int stepCount = abs(turnAngle - previousAngle);  
-  int stepSize;
-  int stepDelay;
-  
   //This function moves the servo slower with an adjustable angle increment and delay  
-  for (int i = 0; i <= stepCount; i += stepSize) 
+  if(turnAngle>previousAngle)
   {
-      // Smooth acceleration & deceleration
-      int progress = abs(turnAngle - (previousAngle + i));
-      
-      stepSize = map(progress, 0, stepCount, 1, 3);   // Small steps near start/end
-      stepDelay = map(progress, 0, stepCount, 15, 5); // Slow at start/end, faster in middle
-      
-      servo.write(previousAngle + (turnAngle > previousAngle ? i : -i));
-      delay(stepDelay);
+    for(int i=previousAngle; i<=turnAngle; i+=angleIncrement)
+    {
+      servo.write(i);
+      delay(incrementDelay);
+    }
+  }
+
+  if(turnAngle<previousAngle)
+  {
+    for(int i=previousAngle; i>=turnAngle; i-=angleIncrement)
+    {
+      servo.write(i);
+      delay(incrementDelay);
+    }
   }
 
   // Save current angle 
@@ -1338,9 +1340,6 @@ void handleParameters(const String& jsonPayload)
     Serial.print("    refreshRate: "); Serial.println(refreshRate);
     Serial.print("    timeOffset: "); Serial.println(timeOffset);
     Serial.print("    tempOffset: "); Serial.println(tempCalibration);
-
-    // Set parameter request bool to true only if all parameters were received correctly
-    requestedParameters = true;
 
     lcdCommand("rec parameters");
 }
