@@ -49,45 +49,55 @@ int SERVO_ADDRESS = 0;
 int MODE_ADDRESS = 1;
 int TEMP_ADDRESS = 2;
 
-//Measurement variables
+// Measurement variables
 float celsius;
 float hum;
 float pres;
 
-//Calibration constants
-double tempCalibration = -3.2;
-double presCalibration = 0;
-double humCalibration = 26;
+// Calibration constants
+double tempCalibration = -3.2;                      // Calibration constant for temperature readings
+double presCalibration = 0;                         // Calibration constant for pressure readings                     
+double humCalibration = 26;                         // Calibration constant for humidity readings
 
-//Constants to convert selected temperature to servo position
-double servoConvertA = 5.817;
-double servoConvertB = -25.466;
-int previousAngle;
-int servoLastAngle = 90;
+// Constants to convert selected temperature to servo position
+double servoConvertA = 5.817;                       // Temperature - angle function linear fit A value
+double servoConvertB = -25.466;                     // Temperature - angle function linear fit B value
+int previousAngle;                                  // Previous angle setting
+int servoLastAngle = 90;                            // Last servo angle before reboot
 
-//Refresh loop parameters
-int refreshRate = 60; //Measurement loop length
-int refreshLoop = 1; //Number of refresh loops
-int connectRate = 300; //Connection check loop
-unsigned long previousMillis1 = 0;
+// Refresh loop parameters
+int refreshRate = 60;                               // Measurement loop length [s]
+int refreshLoop = 1;                                // Number of refresh loops
+int connectRate = 300;                              // Connection check loop length [s]
+unsigned long previousMillis1 = 0;    
 
 // Temperature control parameters
-//  Time hour       [01,02,03,04,05,06,07,08,09,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24]
-int tempSchedule[7][24];  // Store temperature schedule for each hour of the week
-int onTemperature = 22;
-int offTemperature = 14;
-double tempControlRange = 0.15;
-int heaterSetting = offTemperature;
-int tempGoal;
-int safetyTemp = 18;
-bool autoMode = false;
-bool lcdMode = true;
-bool wifiStatus = false;
-int wifiStrength;
-String mode = "heat";
-bool requestedSchedule = false;
-bool requestedParameters = false;
+int onTemperature = 22;                             // Temperature setting for heating on state
+int offTemperature = 14;                            // Temperature setting for heating off state
+double tempControlRange = 0.15;                     // Temperature control range for on/off switching
+int heaterSetting = offTemperature;                 // Current temperature setting for the heating logic (onTemperature or offTemperature)
+int tempGoal;                                       // Goal temperature setting for the heating logic
+int safetyTemp = 18;                                // Safety temperature when device loses connection
+bool autoMode = false;                              // Auto mode on/off state bool
+bool lcdMode = true;                                // LCD on/off state bool
+bool wifiStatus = false;                            // WiFi status indicator
+long wifiStrength;                                  // WiFi strength value
+String mode = "heat";                               // Active temperature control mode (auto, heat, cool, off) 
 
+// Default temperature schedule
+//[01, 02, 03, 04, 05, 06, 07, 08, 09, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24]
+int tempSchedule[7][24] = 
+{
+  {18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 19, 20, 20, 20, 20, 20, 20, 20, 20, 19, 18},  // Monday
+  {18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 19, 20, 20, 20, 20, 20, 20, 20, 20, 19, 18},  // Tuesday
+  {18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 19, 20, 20, 20, 20, 20, 20, 20, 20, 19, 18},  // Wednesday
+  {18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 19, 20, 20, 20, 20, 20, 20, 20, 20, 19, 18},  // Thursday
+  {18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 19, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20},  // Friday
+  {20, 18, 18, 18, 18, 19, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20},  // Saturday
+  {20, 18, 18, 18, 18, 19, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 19, 18}   // Sunday
+};
+
+// JSON format for Home Assistant automation payload
 /*
     [DAY]       [00][01][02][03][04][05][06][07][08][09][10][11][12][13][14][15][16][17][18][19][20][21][22][23]
 {
@@ -134,20 +144,20 @@ int   daylightOffset_sec = 3600;
 
 /************************** LCD Icons ***********************************/
 
-byte termometru[8]={B00100, B01010, B01010, B01110, B01110, B11111, B11111, B01110};    //icon for termometer
-byte picatura[8]={B00100, B00100, B01010, B01010, B10001, B10001, B10001, B01110};      //icon for water droplet
-byte wifiON[8] = {B00000, B00000, B00001, B00011, B00111, B01111, B11111, B00000};      //icon for wifi ON
-byte wifiOFF[8] = {B10100, B01000, B10100, B00001, B00011, B00111, B01111, B11111};     //icon for wifi OFF
-byte heatOn[8] = {B00000, B10101, B10101, B10101, B10101, B00000, B11111, B10101};      //icon for heating ON
-byte heatOff[8] = {B00000, B00000, B00000, B00000, B00000, B00000, B11111, B10101};     //icon for heating OFF
+byte termometru[8]={B00100, B01010, B01010, B01110, B01110, B11111, B11111, B01110};    // Icon for termometer
+byte picatura[8]={B00100, B00100, B01010, B01010, B10001, B10001, B10001, B01110};      // Icon for water droplet
+byte wifiON[8] = {B00000, B00000, B00001, B00011, B00111, B01111, B11111, B00000};      // Icon for wifi ON
+byte wifiOFF[8] = {B10100, B01000, B10100, B00001, B00011, B00111, B01111, B11111};     // Icon for wifi OFF
+byte heatOn[8] = {B00000, B10101, B10101, B10101, B10101, B00000, B11111, B10101};      // Icon for heating ON
+byte heatOff[8] = {B00000, B00000, B00000, B00000, B00000, B00000, B11111, B10101};     // Icon for heating OFF
 
 /************************** HomeAssistant Settings ***********************************/
 
 // MQTT broker details
-const char* mqtt_server = "192.168.0.241";
-const int mqtt_port = 1783;
-const char* mqtt_client_id = deviceName;
-bool mqttStatus = false;
+const char* mqtt_server = "192.168.0.241";    // IP address of the MQTT broker
+const int mqtt_port = 1783;                   // Port number of the MQTT broker
+const char* mqtt_client_id = deviceName;      // Client ID for this device 
+bool mqttStatus = false;                      // MQTT connection status
 
 // MQTT topics
 // Diagnostic
@@ -164,7 +174,7 @@ String command_topic =                      String("home/") + deviceName + Strin
 String uptime_topic =                       String("home/") + deviceName + String("/uptime");
 String firmware_topic =                     String("home/") + deviceName + String("/firmware");
 String ip_topic =                           String("home/") + deviceName + String("/wifi/ip");
-String wifi_strength =                      String("home/") + deviceName + String("/wifi/strength");
+String wifi_strength_topic =                String("home/") + deviceName + String("/wifi/strength");
 
 // Sensors
 String temperature_topic =                  String("home/") + deviceName + String("/temperature");
@@ -197,9 +207,8 @@ WiFiClient espClient;
 PubSubClient client(espClient);
 
 // Connect to the predefined MQTT broker
-bool connectMQTT()
+void connectMQTT()
 {
-  bool connection = false;
   int attempts = 1;
   
   Serial.println("Connecting to MQTT server:");
@@ -220,17 +229,16 @@ bool connectMQTT()
 	    sendDiscoveries();
 
       Serial.println("	[DONE]");
-      connection = true;
+      mqttStatus = true;
     } 
     else {
       Serial.println("	[ERROR] Failed to connected to TB server (No: " + String(attempts) + ")");
       attempts = attempts + 1;
+      mqttStatus = false;
 	  
       delay(1000);
     }
   }
-
-  return connection;
 }
 
 // MQTT Callback Function
@@ -636,6 +644,7 @@ void sendDiscoveries()
 	publishMQTTDiscovery("Warning", "sensor", "mdi:shield-alert-outline", "", "", "", "diagnostic", log_warning_topic);
 	publishMQTTDiscovery("Info", "sensor", "mdi:information-outline", "", "", "", "diagnostic", log_info_topic);
 	publishMQTTDiscovery("IP Address", "sensor", "mdi:ip-network-outline", "", "", "", "diagnostic", ip_topic);
+  publishMQTTDiscovery("WiFi Strength", "sensor", "mdi-rss", "", "", "", "diagnostic", wifi_strength_topic);
   // Sensors
   publishMQTTDiscovery("Temperature", "sensor", "mdi:home-thermometer", "°C", "temperature", "measurement", "", temperature_topic);
   publishMQTTDiscovery("Pressure", "sensor", "mdi:gauge", "hPa", "pressure", "measurement", "", pressure_topic);
@@ -683,7 +692,7 @@ void setup()
   Serial.println(currentSwVersion); 
 
   // Connect to WiFi network
-  wifiStatus = connectWifi();
+  connectWifi();
 
   // Initialize BME280
   bme.begin(0x76);
@@ -703,7 +712,7 @@ void setup()
   client.setServer(mqtt_server, mqtt_port);
   client.setCallback(mqttCallback);
   client.setBufferSize(4096);
-  mqttStatus = connectMQTT();
+  connectMQTT();
 
   // Announce availability
   publishMessage(availability_topic, "connected", true);
@@ -713,18 +722,12 @@ void setup()
   delay(1000);
 
   // Request boot parameters
-  if(requestedParameters != true)
-  {
-    requestParameters();
-    delay(1000)
-  }
+  requestParameters();
+  delay(1000);
 
   // Request temperature schedule
-  if(requestedSchedule != true)
-  {
-    requestTemperatureSchedule();
-    delay(1000)
-  }
+  requestTemperatureSchedule();
+  delay(1000);
 
   // Verify received parameters
   sendParameters();
@@ -867,6 +870,19 @@ void loop()
     Serial.print(pres);
     Serial.println(" hPa");
 
+    // Check connection states
+    if(WiFi.status() != WL_CONNECTED)
+    {
+      wifiStatus = false;
+    }
+    else
+    {
+      wifiStatus = true;
+      wifiStrength = WiFi.RSSI();
+    }
+     
+    mqttStatus = client.connected();
+
     if (!client.connected()) 
     {
       Serial.println("--------------------------------------");  
@@ -893,11 +909,15 @@ void loop()
       Serial.println("--------------------------------------");
       Serial.println("MQTT connection: Connected");
 
+      // Send diagnostic data to the server
+      publishMessage(wifi_strength_topic, wifiStrength, false);
+      publishMessage(uptime_topic, upTime, false);
+      publishMessage(availability_topic, "connected", false);
+
       // Send telemetry data to the server
       publishMessage(temperature_topic, celsius, false);
       publishMessage(humidity_topic, hum, false);
       publishMessage(pressure_topic, pres, false);
-      publishMessage(uptime_topic, upTime, false);
       publishMessage(tempgoal_topic, tempGoal, false);
       publishMessage(mode_topic, mode, false);   
     
@@ -913,13 +933,10 @@ void loop()
       // Set heating 
       setTemperature(tempGoal,celsius);
 
-      // Send dashboard data
+      // Send climate entity data
       publishMessage(climate_temperature_current_topic, celsius, false);
       publishMessage(climate_temperature_state_topic, tempGoal, false);
       publishMessage(climate_mode_state_topic, mode, false);
-
-      // Refresh availability
-      publishMessage(availability_topic, "connected", false);
 
       // Refresh LCD Screen
       lcdRefresh("ONLINE",timeStamp,timeMinutes, celsius, hum, heaterSetting, tempGoal, autoMode);
@@ -935,7 +952,7 @@ void loop()
 /************************** Device Functions ***********************************/
 
 // Open WiFi connection
-bool connectWifi()
+void connectWifi()
 {
   int attempts = 1;
   
@@ -951,7 +968,7 @@ bool connectWifi()
     if(attempts == 50){
       // Failed to connect
       Serial.println("Failed to connect to WiFi");
-      return false;
+      wifiStatus = false;
     }
   }
   
@@ -963,7 +980,7 @@ bool connectWifi()
   Serial.print("IP address: ");
   Serial.println(WiFi.localIP());
 
-  return true;
+  wifiStatus = true;
 }
 
 // Restart ESP device
@@ -986,27 +1003,30 @@ void servoMove (int turnAngle)
     servo.write(previousAngle);
     servo.attach(SERVO_PIN);
   }
+
+  int stepCount = abs(turnAngle - previousAngle);  
+  int stepSize;
+  int stepDelay;
   
   //This function moves the servo slower with an adjustable angle increment and delay  
-  if(turnAngle>previousAngle)
+  for (int i = 0; i <= stepCount; i += stepSize) 
   {
-    for(int i=previousAngle; i<=turnAngle; i+=angleIncrement)
-    {
-      servo.write(i);
-      delay(incrementDelay);
-    }
+      // Smooth acceleration & deceleration
+      int progress = abs(turnAngle - (previousAngle + i));
+      
+      stepSize = map(progress, 0, stepCount, 1, 3);   // Small steps near start/end
+      stepDelay = map(progress, 0, stepCount, 15, 5); // Slow at start/end, faster in middle
+      
+      servo.write(previousAngle + (turnAngle > previousAngle ? i : -i));
+      delay(stepDelay);
   }
 
-  if(turnAngle<previousAngle)
-  {
-    for(int i=previousAngle; i>=turnAngle; i-=angleIncrement)
-    {
-      servo.write(i);
-      delay(incrementDelay);
-    }
-  }
-
+  // Save current angle 
   previousAngle = turnAngle;
+
+  // Detach servo after movement to prevent noise
+  delay(500);  // Allow it to stabilize before detaching
+  servo.detach();
 }
 
 // Temperature control logic
@@ -1157,8 +1177,15 @@ void printLocalTime()
 
 // Handle target temperature received via MQTT
 void handleTemperature(String setTemp)
-{
-  tempGoal = setTemp.toInt();
+{  
+  int newTempGoal = setTemp.toInt();
+
+  if (newTempGoal == tempGoal) 
+  {
+    return;
+  }
+
+  tempGoal = newTempGoal;
   
   // Turn off auto mode
   handleMode("heat");
@@ -1258,6 +1285,12 @@ void handleCommand(String message)
     lcdCommand("servo off");
     servo.detach();
   }
+  if (message == "request schedule") 
+  {
+    Serial.println("Command received: Schedule Request");
+    lcdCommand("rq schedule");
+    requestTemperatureSchedule();
+  }
 }
 
 // Handle parameters received via MQTT
@@ -1274,6 +1307,19 @@ void handleParameters(const String& jsonPayload)
         return;
     }
 
+    // Check if all expected parameters exist before assigning values
+    if (!doc.containsKey("onTemperature") ||
+        !doc.containsKey("offTemperature") ||
+        !doc.containsKey("tempControlRange") ||
+        !doc.containsKey("safetyTemp") ||
+        !doc.containsKey("refreshRate") ||
+        !doc.containsKey("timeOffset") ||
+        !doc.containsKey("tempOffset")) 
+    {
+        Serial.println("Error: Missing one or more required parameters.");
+        return;
+    }
+
     // Extract values
     onTemperature = doc["onTemperature"].as<int>();
     offTemperature = doc["offTemperature"].as<int>();
@@ -1285,22 +1331,15 @@ void handleParameters(const String& jsonPayload)
 
     // Print extracted values
     Serial.println("  Extracted Parameters:");
-    Serial.print("    onTemperature: ");
-    Serial.println(onTemperature);
-    Serial.print("    offTemperature: ");
-    Serial.println(offTemperature);
-    Serial.print("    tempControlRange: ");
-    Serial.println(tempControlRange);
-    Serial.print("    safetyTemp: ");
-    Serial.println(safetyTemp);
-    Serial.print("    refreshRate: ");
-    Serial.println(refreshRate);
-    Serial.print("    timeOffset: ");
-    Serial.println(timeOffset);
-    Serial.print("    tempOffset: ");
-    Serial.println(tempCalibration);
+    Serial.print("    onTemperature: "); Serial.println(onTemperature);
+    Serial.print("    offTemperature: "); Serial.println(offTemperature);
+    Serial.print("    tempControlRange: "); Serial.println(tempControlRange);
+    Serial.print("    safetyTemp: "); Serial.println(safetyTemp);
+    Serial.print("    refreshRate: "); Serial.println(refreshRate);
+    Serial.print("    timeOffset: "); Serial.println(timeOffset);
+    Serial.print("    tempOffset: "); Serial.println(tempCalibration);
 
-    // Set parameter request bool to true
+    // Set parameter request bool to true only if all parameters were received correctly
     requestedParameters = true;
 
     lcdCommand("rec parameters");

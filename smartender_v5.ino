@@ -143,669 +143,6 @@ const int sleepDutyCycleLED = 10;
 const int operationDutyCycleLED = 250;
 int operationFreq = 5000;
 
-/************************** Device Functions ***********************************/
-
-void consoleLog(const char* consoleText)
-{
-    //tb.sendTelemetryData("consoleLog", consoleText);
-    Serial.println(consoleText);
-}
-
-bool connectWifi()
-{
-  int attempts = 1;
-  
-  // Connect to WiFi network
-  WiFi.begin(WIFI_SSID, WIFI_PASS);
-
-  // Wait for connection
-  while (WiFi.status() != WL_CONNECTED) {
-    attempts = attempts + 1;
-    delay(500);
-    Serial.print(".");
-
-    if(attempts == 50){
-      // Failed to connect
-      Serial.println("Failed to connect to WiFi");
-      return false;
-    }
-  }
-  
-  configurationUrl = WiFi.localIP().toString();
-
-  Serial.println("");
-  Serial.print("Connected to ");
-  Serial.println(WIFI_SSID);
-  Serial.print("IP address: ");
-  Serial.println(WiFi.localIP());
-
-  return true;
-}
-
-void restartESP()
-{
-  Serial.println("Rebooting ESP32");
-  delay(2000);
-  esp_restart();
-}
-
-long readWeightSensor()
-{
-   long weight;
-
-   weight = scale.get_units(7);
-   if (weight < 0)
-   {
-     weight = 0.00;
-   }
-
-   // If using double load cells
-   weight = weight * 2;
-
-  //Serial.print("Load cell: ");
-  //Serial.print(weight);
-  //Serial.println("g");
-
-  tb.sendTelemetryData("weight", weight);
-  publishMessage(weight_topic, static_cast<double>(weight));
-
-  return weight;
-}
-
-void measureDrink(float drinkVolume, int scaleCalibrationOffset)
-{
-    long currentWeight = 0;
-    int measureInterval = 100;
-    int maxMeasureTime = 30000;
-    
-    // Zero out scale
-    scale.tare();
-
-    // Run until selected volume
-    int i = 0;
-    while(currentWeight < drinkVolume - scaleCalibrationOffset)
-    {
-      i = i + measureInterval;
-      delay(measureInterval);
-      currentWeight = readWeightSensor();
-
-      // Check for error
-      if(i > maxMeasureTime)
-      {
-        consoleLog("[ERROR] Maximum measurement time reached");
-        break;
-      }
-    }
-}
-
-void waitForRemove()
-{
-  consoleLog("Remove drink from table");
-  
-  // Wait for drink removal
-  while(readWeightSensor()> 2)
-  {
-    delay(1000);  
-  }
-  
-  delay(1000);
-
-  // Reset scale
-  scale.tare();
-}
-
-void stepperHoming()
-{
-  Serial.println("Starting homing function");
-  consoleLog("Homing stepper Z-axis");
-
-  delay(1000);
-  
-  // Set the maximum speed and acceleration for homing
-  stepper.setMaxSpeed(3000.0);
-  stepper.setAcceleration(1000.0);
-
-  // Move up until homing switch pressed
-  while(digitalRead(homingPin)  == HIGH)
-  {
-    stepper.runToNewPosition(stepper.currentPosition() + 200); //Move up
-  }
-
-  // Move down until homing switch released
-  while(digitalRead(homingPin)  == LOW)
-  {
-    stepper.runToNewPosition(stepper.currentPosition() - 100); //Move down
-  }
-
-  Serial.println("Homing finished");
-  consoleLog("Stepper homing finished");
-  stepper.setCurrentPosition(0);
-
-  // Set the maximum speed and acceleration for operation
-  stepper.setMaxSpeed(headMaxSpeed);
-  stepper.setAcceleration(headAcceleration);
-}
-
-String getCommands(String data, char separator, int index)
-{
-  //
-  int found = 0;
-  int strIndex[] = {0, -1};
-  int maxIndex = data.length()-1;
-
-  for(int i=0; i<=maxIndex && found<=index; i++){
-    if(data.charAt(i)==separator){
-        found++;
-        strIndex[0] = strIndex[1]+1;
-        strIndex[1] = (i == maxIndex) ? i+1 : i;
-    }
-  }
-
-  return found>index ? data.substring(strIndex[0], strIndex[1]) : "";
-}
-
-void motorStirring (int onTime)
-{
-  motor(true);
-  delay(onTime);
-  motor(false);  
-}
-
-void pump(int pumpID, bool state)
-{  
-    pumpStatus[pumpID] = state;
-    
-    if(state)
-    {
-      Serial.print("Pump [");
-      Serial.print(pumpID);
-      Serial.println("] : START");
-      digitalWrite(pumpPin[pumpID], HIGH); 
-    }
-    else 
-    {
-      Serial.print("Pump [");
-      Serial.print(pumpID);
-      Serial.println("] : STOP");
-      digitalWrite(pumpPin[pumpID], LOW); 
-    }
-
-     switch (pumpID) 
-     {
-       case 1:
-         tb.sendAttributeData("pump1", pumpStatus[pumpID]);
-         break;
-       case 2:
-         tb.sendAttributeData("pump2", pumpStatus[pumpID]);;
-         break;
-       case 3:
-         tb.sendAttributeData("pump3", pumpStatus[pumpID]);
-         break;
-       case 4:
-         tb.sendAttributeData("pump4", pumpStatus[pumpID]);
-         break;
-       case 5:
-         tb.sendAttributeData("pump5", pumpStatus[pumpID]);
-         break;
-       case 6:
-         tb.sendAttributeData("pump6", pumpStatus[pumpID]);
-         break;
-       default:
-         // statements
-         break;
-     }
-}
-
-void motor(bool state)
-{
-    statusMotor = state;
-    
-    if(state)
-    {
-      Serial.println("Motor: START");
-      digitalWrite(motorPin, HIGH); 
-    }
-    else 
-    {
-      Serial.println("Motor: STOP");
-      digitalWrite(motorPin, LOW);
-    }
-
-    tb.sendAttributeData("motor", statusMotor); 
-}
-
-void peltier(bool state)
-{
-    statusPeltier = state;
-    
-    if(state)
-    {
-      Serial.println("Peltier: START");
-      digitalWrite(peltierPin, HIGH); 
-    }
-    else 
-    {
-      Serial.println("Peltier: STOP");
-      digitalWrite(peltierPin, LOW);
-    }
-
-    tb.sendAttributeData("peltier", statusPeltier); 
-}
-
-void fan(bool state)
-{
-    statusFan = state;
-    
-    if(state)
-    {
-      Serial.println("Fan: START");
-      digitalWrite(fanPin, HIGH); 
-    }
-    else 
-    {
-      Serial.println("Fan: STOP");
-      digitalWrite(fanPin, LOW);
-    }
-
-    tb.sendAttributeData("fan", statusFan); 
-}
-
-void blinkLED(int blinkDelay, int blinkNumber)
-{
-  for (int i = 0; i <= blinkNumber; i++) {
-    ledcWrite(ledChannel, dutyCycleLED);
-    delay(blinkDelay);
-    ledcWrite(ledChannel, 0);
-    delay(blinkDelay);
-  }  
-}
-
-void calibrateScale(int calibrationWeight)
-{ 
-  Serial.println("---------------------------------");
-  Serial.println("      Starting calibration");
-  Serial.print("  Calibration weight goal: ");
-  Serial.println(calibrationWeight);
-  Serial.println("      ");
-
-  consoleLog("Scale calibration started");
-
-  // Restart weight sensor
-  Serial.println("  Turning off weight sensor");
-  digitalWrite(weightSensorPin,LOW);
-  delay(1000);
-  Serial.println("  Turning on weight sensor");
-  digitalWrite(weightSensorPin,HIGH);
-  
-  // Reset empty scale 
-  scale.tare();
-
-  Serial.println("  Waiting for glass placement");
-  
-  // Wait until calibrationWeight placed on the scale
-  while(readWeightSensor() < 100)
-  {
-    ledcWrite(ledChannel, dutyCycleLED);
-    delay(500);
-    ledcWrite(ledChannel, 0);
-    delay(500);
-  }
-  Serial.print("  Glass placement detected ");
-  
-  long currentWeight = readWeightSensor();
-  int iterationNumber = 0;
-
-  Serial.println(currentWeight); 
-
-  // Start calibration
-  while(abs(currentWeight - calibrationWeight)>2)
-  {
-    // Adjust scale factor
-    scaleCalibrationFactor = scaleCalibrationFactor + (currentWeight - calibrationWeight)*0.1;
-    
-    Serial.print("  Calibration factor: ");
-    Serial.print(scaleCalibrationFactor);
-    
-    scale.set_scale(scaleCalibrationFactor);
-
-    delay(500);
-
-    // Read current weight after calibration
-    currentWeight = readWeightSensor();
-    
-    Serial.print("  Current weight: ");
-    Serial.println(currentWeight);
-    
-    // Check if we are stuck
-    iterationNumber++;
-    if(iterationNumber > 200)
-    {
-      blinkLED(100, 10);
-      break;
-    }
-  }
-  
-  // Finished calibration
-  tb.sendAttributeData("calibrationFactor", scaleCalibrationFactor);
-  publishMessage(calibration_topic, scaleCalibrationFactor);
-  consoleLog("Scale calibration finished");
-
-  Serial.println("      ");
-  Serial.println("      Finished calibration");
-  Serial.println("---------------------------------");
-}
-
-void reCalibrateScale(int calibrationWeight)
-{ 
-  Serial.println("---------------------------------");
-  Serial.println("      Starting calibration");
-  Serial.print("  Calibration weight goal: ");
-  Serial.println(calibrationWeight);
-  Serial.println("      ");
-
-  consoleLog("Scale calibration started");
-  
-  long currentWeight = readWeightSensor();
-  int iterationNumber = 0;
-
-  Serial.println(currentWeight); 
-
-  // Start calibration
-  while(abs(currentWeight - calibrationWeight)>2)
-  {
-    // Adjust scale factor
-    scaleCalibrationFactor = scaleCalibrationFactor + (currentWeight - calibrationWeight)*0.1;
-    
-    Serial.print("  Calibration factor: ");
-    Serial.print(scaleCalibrationFactor);
-    
-    scale.set_scale(scaleCalibrationFactor);
-
-    delay(500);
-
-    // Read current weight after calibration
-    currentWeight = readWeightSensor();
-    
-    Serial.print("  Current weight: ");
-    Serial.println(currentWeight);
-    
-    // Check if we are stuck
-    iterationNumber++;
-    if(iterationNumber > 200)
-    {
-      blinkLED(100, 10);
-      break;
-    }
-  }
-  
-  // Finished calibration
-  tb.sendAttributeData("calibrationFactor", scaleCalibrationFactor);
-  consoleLog("Scale calibration finished");
-
-  Serial.println("      ");
-  Serial.println("      Finished calibration");
-  Serial.println("---------------------------------");
-}
-
-double flowMeasure(int pumpID)
-{
-  Serial.println("---------------------------------");
-  Serial.println("      Flow measurement function");
-  
-  // Reset empty scale 
-  scale.tare();
-
-  Serial.println("      Starting priming selected pump");  
-  // Wait until calibrationWeight placed on the scale
-  pump(pumpID,true);
-  while(readWeightSensor() < 20)
-  {
-    delay(20);
-  }
-  pump(pumpID,false);
-  Serial.println("      Pump succesfully primed ");
-
-  delay(1000);
-
-  // Starting measurement
-  unsigned long startMillis = millis();
-
-  pump(pumpID,true);
-  measureDrink(100,0);
-  pump(pumpID,false);
-
-  unsigned long endMillis = millis();
-
-  // Calculate pump speed in g/msec
-  double pumpSpeed = 100/(endMillis - startMillis);
-
-  // Return pump speed
-  return pumpSpeed;
-}
-
-void sleepModeON()
-{
-    Serial.println("--------------------------------");
-    Serial.println("        Sleep Mode ON");
-    Serial.println("--------------------------------");
-
-    consoleLog("Entering sleep mode");
-    
-    // Set sleep brightness
-    while(dutyCycleLED > sleepDutyCycleLED)
-    {
-        dutyCycleLED--;
-        ledcWrite(ledChannel, dutyCycleLED);
-        delay(100);
-    }
-
-    // Activate sleep mode on stepper driver
-    digitalWrite(stepperSLP,LOW);
-
-    // Turn off cooling fan
-    fan(false);
-}
-
-void sleepModeOFF()
-{
-    Serial.println("--------------------------------");
-    Serial.println("        Sleep Mode OFF");
-    Serial.println("--------------------------------");
-
-    consoleLog("Waking up from sleep mode");
-    
-    // Reset activity timer
-    activityMillis = millis();
-    
-    // Set normal mode brightness
-    while(dutyCycleLED < operationDutyCycleLED)
-    {
-        dutyCycleLED++;
-        ledcWrite(ledChannel, dutyCycleLED);
-        delay(10);
-    }
-
-    // Turn on stepper driver
-    digitalWrite(stepperSLP,HIGH);
-
-    // Turn on cooling fan
-    fan(true);
-}
-
-void checkPushButton() 
-{
-    static unsigned long pressedTime = 0; // Time when the button was pressed
-    static bool isLongDetected = false;  // Tracks if a long press was detected
-    static int lastState = HIGH;         // Last button state
-    const unsigned long debounceDelay = 50; // Debounce delay in ms
-
-    int currentState = digitalRead(buttonPin);
-
-    if (lastState == HIGH && currentState == LOW) { // Button pressed
-        unsigned long now = millis();
-        if (now - pressedTime > debounceDelay) { // Debounce check
-            pressedTime = now;
-            isLongDetected = false;
-        }
-    } 
-    else if (lastState == LOW && currentState == HIGH) { // Button released
-        unsigned long pressDuration = millis() - pressedTime;
-
-        if (pressDuration > longPressTime && !isLongDetected) {
-            Serial.println("  --- Button press detected ---");
-            
-            // Sleep mode off
-            sleepModeOFF();
-            
-            drinks(buttonDrink);
-            
-            isLongDetected = true;
-        }
-    }
-
-    // Update last state
-    lastState = currentState;
-}
-
-void dispense(int drink, float amount)
-{
-     // Update daily drink amount
-     dailyAmount = dailyAmount + amount;
-     tb.sendAttributeData("dailyAmount",dailyAmount);
-     publishMessage(amount_topic, dailyAmount);
-
-     switch (drink) 
-     {
-       case 1:
-         pump(waterPump,true);
-         measureDrink(amount,20);
-         pump(waterPump,false);
-         break;
-       case 2:
-         pump(syrup1Pump,true);
-         measureDrink(amount,0);
-         pump(syrup1Pump,false);
-         break;
-       case 3:
-         pump(syrup2Pump,true);
-         measureDrink(amount,0);
-         pump(syrup2Pump,false);
-         break;
-       default:
-         // statements
-         Serial.println("   Unknown dispense command!");
-         break;
-     }
-}
-
-void drinks(int drinkID)
-{
-     // Drink menu
-     //  - 1: Water
-     //  - 2: Syrup1
-     //  - 3: Syrup2
-     //  - 4: Vodka
-
-     consoleLog("Drink order received");
-
-     switch (drinkID) 
-     {
-       case 11:
-            Serial.println("  |MIXING: Water 1dl|  ");
-            dispense(1,100);
-            
-            waitForRemove();
-         break;
-       case 12:
-            Serial.println("  |MIXING: Water 2dl|  ");
-            dispense(1,200);
-            
-            waitForRemove();
-         break;
-       case 21:
-            Serial.println("  |MIXING: Syrup1 2dl|  ");
-            if(headOperation){stepper.runToNewPosition(headMovement);}
-            
-            dispense(2,15); 
-            
-            delay(1000);   
-             
-            dispense(1,175);
-            
-            motorStirring(stirrTime);
-            
-            if(headOperation){stepper.runToNewPosition(0);}
-            
-            waitForRemove();
-         break;
-       case 22:
-            Serial.println("  |MIXING: Syrup2 2dl|  ");
-            if(headOperation){stepper.runToNewPosition(headMovement);}
-            
-            dispense(3,5); 
-            
-            delay(1000);   
-             
-            dispense(1,180);
-            
-            motorStirring(stirrTime);
-            
-            if(headOperation){stepper.runToNewPosition(0);}
-            
-            waitForRemove();
-         break;
-       case 31:
-            Serial.println("  |MIXING: Vodka Soda|  ");
-            if(headOperation){stepper.runToNewPosition(headMovement);}
-            
-            dispense(4,20);
-            
-            delay(1000);
-            
-            dispense(2,10);
-            
-            delay(1000);
-            
-            dispense(1,130);
-            
-            motorStirring(stirrTime);
-            
-            if(headOperation){stepper.runToNewPosition(0);}
-            
-            waitForRemove();
-         break;
-       default:
-         // statements
-         break;
-     }
-}
-
-void setupBootParameters(String parameter, double value)
-{
-
-  if (parameter == "glassWeight") {
-      glassWeight = value;
-      Serial.print("    [SET] glassWeight");
-      Serial.print(" [TO] ");
-      Serial.println(value);
-
-  } else if (parameter == "buttonDrink") {
-      buttonDrink = value;
-      Serial.print("    [SET] buttonDrink");
-      Serial.print(" [TO] ");
-      Serial.println(value);
-
-  } else if (parameter == "buttonCheck") {
-      buttonCheck = value;
-      Serial.print("    [SET] buttonCheck");
-      Serial.print(" [TO] ");
-      Serial.println(value);
-
-  } else {
-    Serial.println("Invalid boot parameter");
-  }
-}
-
 /************************** HomeAssistant Settings ***********************************/
 
 // MQTT broker details
@@ -1568,4 +905,667 @@ void loop(void)
       publishMessage(amount_topic, dailyAmount);
   }
   
+}
+
+/************************** Device Functions ***********************************/
+
+void consoleLog(const char* consoleText)
+{
+    //tb.sendTelemetryData("consoleLog", consoleText);
+    Serial.println(consoleText);
+}
+
+bool connectWifi()
+{
+  int attempts = 1;
+  
+  // Connect to WiFi network
+  WiFi.begin(WIFI_SSID, WIFI_PASS);
+
+  // Wait for connection
+  while (WiFi.status() != WL_CONNECTED) {
+    attempts = attempts + 1;
+    delay(500);
+    Serial.print(".");
+
+    if(attempts == 50){
+      // Failed to connect
+      Serial.println("Failed to connect to WiFi");
+      return false;
+    }
+  }
+  
+  configurationUrl = WiFi.localIP().toString();
+
+  Serial.println("");
+  Serial.print("Connected to ");
+  Serial.println(WIFI_SSID);
+  Serial.print("IP address: ");
+  Serial.println(WiFi.localIP());
+
+  return true;
+}
+
+void restartESP()
+{
+  Serial.println("Rebooting ESP32");
+  delay(2000);
+  esp_restart();
+}
+
+long readWeightSensor()
+{
+   long weight;
+
+   weight = scale.get_units(7);
+   if (weight < 0)
+   {
+     weight = 0.00;
+   }
+
+   // If using double load cells
+   weight = weight * 2;
+
+  //Serial.print("Load cell: ");
+  //Serial.print(weight);
+  //Serial.println("g");
+
+  tb.sendTelemetryData("weight", weight);
+  publishMessage(weight_topic, static_cast<double>(weight));
+
+  return weight;
+}
+
+void measureDrink(float drinkVolume, int scaleCalibrationOffset)
+{
+    long currentWeight = 0;
+    int measureInterval = 100;
+    int maxMeasureTime = 30000;
+    
+    // Zero out scale
+    scale.tare();
+
+    // Run until selected volume
+    int i = 0;
+    while(currentWeight < drinkVolume - scaleCalibrationOffset)
+    {
+      i = i + measureInterval;
+      delay(measureInterval);
+      currentWeight = readWeightSensor();
+
+      // Check for error
+      if(i > maxMeasureTime)
+      {
+        consoleLog("[ERROR] Maximum measurement time reached");
+        break;
+      }
+    }
+}
+
+void waitForRemove()
+{
+  consoleLog("Remove drink from table");
+  
+  // Wait for drink removal
+  while(readWeightSensor()> 2)
+  {
+    delay(1000);  
+  }
+  
+  delay(1000);
+
+  // Reset scale
+  scale.tare();
+}
+
+void stepperHoming()
+{
+  Serial.println("Starting homing function");
+  consoleLog("Homing stepper Z-axis");
+
+  delay(1000);
+  
+  // Set the maximum speed and acceleration for homing
+  stepper.setMaxSpeed(3000.0);
+  stepper.setAcceleration(1000.0);
+
+  // Move up until homing switch pressed
+  while(digitalRead(homingPin)  == HIGH)
+  {
+    stepper.runToNewPosition(stepper.currentPosition() + 200); //Move up
+  }
+
+  // Move down until homing switch released
+  while(digitalRead(homingPin)  == LOW)
+  {
+    stepper.runToNewPosition(stepper.currentPosition() - 100); //Move down
+  }
+
+  Serial.println("Homing finished");
+  consoleLog("Stepper homing finished");
+  stepper.setCurrentPosition(0);
+
+  // Set the maximum speed and acceleration for operation
+  stepper.setMaxSpeed(headMaxSpeed);
+  stepper.setAcceleration(headAcceleration);
+}
+
+String getCommands(String data, char separator, int index)
+{
+  //
+  int found = 0;
+  int strIndex[] = {0, -1};
+  int maxIndex = data.length()-1;
+
+  for(int i=0; i<=maxIndex && found<=index; i++){
+    if(data.charAt(i)==separator){
+        found++;
+        strIndex[0] = strIndex[1]+1;
+        strIndex[1] = (i == maxIndex) ? i+1 : i;
+    }
+  }
+
+  return found>index ? data.substring(strIndex[0], strIndex[1]) : "";
+}
+
+void motorStirring (int onTime)
+{
+  motor(true);
+  delay(onTime);
+  motor(false);  
+}
+
+void pump(int pumpID, bool state)
+{  
+    pumpStatus[pumpID] = state;
+    
+    if(state)
+    {
+      Serial.print("Pump [");
+      Serial.print(pumpID);
+      Serial.println("] : START");
+      digitalWrite(pumpPin[pumpID], HIGH); 
+    }
+    else 
+    {
+      Serial.print("Pump [");
+      Serial.print(pumpID);
+      Serial.println("] : STOP");
+      digitalWrite(pumpPin[pumpID], LOW); 
+    }
+
+     switch (pumpID) 
+     {
+       case 1:
+         tb.sendAttributeData("pump1", pumpStatus[pumpID]);
+         break;
+       case 2:
+         tb.sendAttributeData("pump2", pumpStatus[pumpID]);;
+         break;
+       case 3:
+         tb.sendAttributeData("pump3", pumpStatus[pumpID]);
+         break;
+       case 4:
+         tb.sendAttributeData("pump4", pumpStatus[pumpID]);
+         break;
+       case 5:
+         tb.sendAttributeData("pump5", pumpStatus[pumpID]);
+         break;
+       case 6:
+         tb.sendAttributeData("pump6", pumpStatus[pumpID]);
+         break;
+       default:
+         // statements
+         break;
+     }
+}
+
+void motor(bool state)
+{
+    statusMotor = state;
+    
+    if(state)
+    {
+      Serial.println("Motor: START");
+      digitalWrite(motorPin, HIGH); 
+    }
+    else 
+    {
+      Serial.println("Motor: STOP");
+      digitalWrite(motorPin, LOW);
+    }
+
+    tb.sendAttributeData("motor", statusMotor); 
+}
+
+void peltier(bool state)
+{
+    statusPeltier = state;
+    
+    if(state)
+    {
+      Serial.println("Peltier: START");
+      digitalWrite(peltierPin, HIGH); 
+    }
+    else 
+    {
+      Serial.println("Peltier: STOP");
+      digitalWrite(peltierPin, LOW);
+    }
+
+    tb.sendAttributeData("peltier", statusPeltier); 
+}
+
+void fan(bool state)
+{
+    statusFan = state;
+    
+    if(state)
+    {
+      Serial.println("Fan: START");
+      digitalWrite(fanPin, HIGH); 
+    }
+    else 
+    {
+      Serial.println("Fan: STOP");
+      digitalWrite(fanPin, LOW);
+    }
+
+    tb.sendAttributeData("fan", statusFan); 
+}
+
+void blinkLED(int blinkDelay, int blinkNumber)
+{
+  for (int i = 0; i <= blinkNumber; i++) {
+    ledcWrite(ledChannel, dutyCycleLED);
+    delay(blinkDelay);
+    ledcWrite(ledChannel, 0);
+    delay(blinkDelay);
+  }  
+}
+
+void calibrateScale(int calibrationWeight)
+{ 
+  Serial.println("---------------------------------");
+  Serial.println("      Starting calibration");
+  Serial.print("  Calibration weight goal: ");
+  Serial.println(calibrationWeight);
+  Serial.println("      ");
+
+  consoleLog("Scale calibration started");
+
+  // Restart weight sensor
+  Serial.println("  Turning off weight sensor");
+  digitalWrite(weightSensorPin,LOW);
+  delay(1000);
+  Serial.println("  Turning on weight sensor");
+  digitalWrite(weightSensorPin,HIGH);
+  
+  // Reset empty scale 
+  scale.tare();
+
+  Serial.println("  Waiting for glass placement");
+  
+  // Wait until calibrationWeight placed on the scale
+  while(readWeightSensor() < 100)
+  {
+    ledcWrite(ledChannel, dutyCycleLED);
+    delay(500);
+    ledcWrite(ledChannel, 0);
+    delay(500);
+  }
+  Serial.print("  Glass placement detected ");
+  
+  long currentWeight = readWeightSensor();
+  int iterationNumber = 0;
+
+  Serial.println(currentWeight); 
+
+  // Start calibration
+  while(abs(currentWeight - calibrationWeight)>2)
+  {
+    // Adjust scale factor
+    scaleCalibrationFactor = scaleCalibrationFactor + (currentWeight - calibrationWeight)*0.1;
+    
+    Serial.print("  Calibration factor: ");
+    Serial.print(scaleCalibrationFactor);
+    
+    scale.set_scale(scaleCalibrationFactor);
+
+    delay(500);
+
+    // Read current weight after calibration
+    currentWeight = readWeightSensor();
+    
+    Serial.print("  Current weight: ");
+    Serial.println(currentWeight);
+    
+    // Check if we are stuck
+    iterationNumber++;
+    if(iterationNumber > 200)
+    {
+      blinkLED(100, 10);
+      break;
+    }
+  }
+  
+  // Finished calibration
+  tb.sendAttributeData("calibrationFactor", scaleCalibrationFactor);
+  publishMessage(calibration_topic, scaleCalibrationFactor);
+  consoleLog("Scale calibration finished");
+
+  Serial.println("      ");
+  Serial.println("      Finished calibration");
+  Serial.println("---------------------------------");
+}
+
+void reCalibrateScale(int calibrationWeight)
+{ 
+  Serial.println("---------------------------------");
+  Serial.println("      Starting calibration");
+  Serial.print("  Calibration weight goal: ");
+  Serial.println(calibrationWeight);
+  Serial.println("      ");
+
+  consoleLog("Scale calibration started");
+  
+  long currentWeight = readWeightSensor();
+  int iterationNumber = 0;
+
+  Serial.println(currentWeight); 
+
+  // Start calibration
+  while(abs(currentWeight - calibrationWeight)>2)
+  {
+    // Adjust scale factor
+    scaleCalibrationFactor = scaleCalibrationFactor + (currentWeight - calibrationWeight)*0.1;
+    
+    Serial.print("  Calibration factor: ");
+    Serial.print(scaleCalibrationFactor);
+    
+    scale.set_scale(scaleCalibrationFactor);
+
+    delay(500);
+
+    // Read current weight after calibration
+    currentWeight = readWeightSensor();
+    
+    Serial.print("  Current weight: ");
+    Serial.println(currentWeight);
+    
+    // Check if we are stuck
+    iterationNumber++;
+    if(iterationNumber > 200)
+    {
+      blinkLED(100, 10);
+      break;
+    }
+  }
+  
+  // Finished calibration
+  tb.sendAttributeData("calibrationFactor", scaleCalibrationFactor);
+  consoleLog("Scale calibration finished");
+
+  Serial.println("      ");
+  Serial.println("      Finished calibration");
+  Serial.println("---------------------------------");
+}
+
+double flowMeasure(int pumpID)
+{
+  Serial.println("---------------------------------");
+  Serial.println("      Flow measurement function");
+  
+  // Reset empty scale 
+  scale.tare();
+
+  Serial.println("      Starting priming selected pump");  
+  // Wait until calibrationWeight placed on the scale
+  pump(pumpID,true);
+  while(readWeightSensor() < 20)
+  {
+    delay(20);
+  }
+  pump(pumpID,false);
+  Serial.println("      Pump succesfully primed ");
+
+  delay(1000);
+
+  // Starting measurement
+  unsigned long startMillis = millis();
+
+  pump(pumpID,true);
+  measureDrink(100,0);
+  pump(pumpID,false);
+
+  unsigned long endMillis = millis();
+
+  // Calculate pump speed in g/msec
+  double pumpSpeed = 100/(endMillis - startMillis);
+
+  // Return pump speed
+  return pumpSpeed;
+}
+
+void sleepModeON()
+{
+    Serial.println("--------------------------------");
+    Serial.println("        Sleep Mode ON");
+    Serial.println("--------------------------------");
+
+    consoleLog("Entering sleep mode");
+    
+    // Set sleep brightness
+    while(dutyCycleLED > sleepDutyCycleLED)
+    {
+        dutyCycleLED--;
+        ledcWrite(ledChannel, dutyCycleLED);
+        delay(100);
+    }
+
+    // Activate sleep mode on stepper driver
+    digitalWrite(stepperSLP,LOW);
+
+    // Turn off cooling fan
+    fan(false);
+}
+
+void sleepModeOFF()
+{
+    Serial.println("--------------------------------");
+    Serial.println("        Sleep Mode OFF");
+    Serial.println("--------------------------------");
+
+    consoleLog("Waking up from sleep mode");
+    
+    // Reset activity timer
+    activityMillis = millis();
+    
+    // Set normal mode brightness
+    while(dutyCycleLED < operationDutyCycleLED)
+    {
+        dutyCycleLED++;
+        ledcWrite(ledChannel, dutyCycleLED);
+        delay(10);
+    }
+
+    // Turn on stepper driver
+    digitalWrite(stepperSLP,HIGH);
+
+    // Turn on cooling fan
+    fan(true);
+}
+
+void checkPushButton() 
+{
+    static unsigned long pressedTime = 0; // Time when the button was pressed
+    static bool isLongDetected = false;  // Tracks if a long press was detected
+    static int lastState = HIGH;         // Last button state
+    const unsigned long debounceDelay = 50; // Debounce delay in ms
+
+    int currentState = digitalRead(buttonPin);
+
+    if (lastState == HIGH && currentState == LOW) { // Button pressed
+        unsigned long now = millis();
+        if (now - pressedTime > debounceDelay) { // Debounce check
+            pressedTime = now;
+            isLongDetected = false;
+        }
+    } 
+    else if (lastState == LOW && currentState == HIGH) { // Button released
+        unsigned long pressDuration = millis() - pressedTime;
+
+        if (pressDuration > longPressTime && !isLongDetected) {
+            Serial.println("  --- Button press detected ---");
+            
+            // Sleep mode off
+            sleepModeOFF();
+            
+            drinks(buttonDrink);
+            
+            isLongDetected = true;
+        }
+    }
+
+    // Update last state
+    lastState = currentState;
+}
+
+void dispense(int drink, float amount)
+{
+     // Update daily drink amount
+     dailyAmount = dailyAmount + amount;
+     tb.sendAttributeData("dailyAmount",dailyAmount);
+     publishMessage(amount_topic, dailyAmount);
+
+     switch (drink) 
+     {
+       case 1:
+         pump(waterPump,true);
+         measureDrink(amount,20);
+         pump(waterPump,false);
+         break;
+       case 2:
+         pump(syrup1Pump,true);
+         measureDrink(amount,0);
+         pump(syrup1Pump,false);
+         break;
+       case 3:
+         pump(syrup2Pump,true);
+         measureDrink(amount,0);
+         pump(syrup2Pump,false);
+         break;
+       default:
+         // statements
+         Serial.println("   Unknown dispense command!");
+         break;
+     }
+}
+
+void drinks(int drinkID)
+{
+     // Drink menu
+     //  - 1: Water
+     //  - 2: Syrup1
+     //  - 3: Syrup2
+     //  - 4: Vodka
+
+     consoleLog("Drink order received");
+
+     switch (drinkID) 
+     {
+       case 11:
+            Serial.println("  |MIXING: Water 1dl|  ");
+            dispense(1,100);
+            
+            waitForRemove();
+         break;
+       case 12:
+            Serial.println("  |MIXING: Water 2dl|  ");
+            dispense(1,200);
+            
+            waitForRemove();
+         break;
+       case 21:
+            Serial.println("  |MIXING: Syrup1 2dl|  ");
+            if(headOperation){stepper.runToNewPosition(headMovement);}
+            
+            dispense(2,15); 
+            
+            delay(1000);   
+             
+            dispense(1,175);
+            
+            motorStirring(stirrTime);
+            
+            if(headOperation){stepper.runToNewPosition(0);}
+            
+            waitForRemove();
+         break;
+       case 22:
+            Serial.println("  |MIXING: Syrup2 2dl|  ");
+            if(headOperation){stepper.runToNewPosition(headMovement);}
+            
+            dispense(3,5); 
+            
+            delay(1000);   
+             
+            dispense(1,180);
+            
+            motorStirring(stirrTime);
+            
+            if(headOperation){stepper.runToNewPosition(0);}
+            
+            waitForRemove();
+         break;
+       case 31:
+            Serial.println("  |MIXING: Vodka Soda|  ");
+            if(headOperation){stepper.runToNewPosition(headMovement);}
+            
+            dispense(4,20);
+            
+            delay(1000);
+            
+            dispense(2,10);
+            
+            delay(1000);
+            
+            dispense(1,130);
+            
+            motorStirring(stirrTime);
+            
+            if(headOperation){stepper.runToNewPosition(0);}
+            
+            waitForRemove();
+         break;
+       default:
+         // statements
+         break;
+     }
+}
+
+void setupBootParameters(String parameter, double value)
+{
+
+  if (parameter == "glassWeight") {
+      glassWeight = value;
+      Serial.print("    [SET] glassWeight");
+      Serial.print(" [TO] ");
+      Serial.println(value);
+
+  } else if (parameter == "buttonDrink") {
+      buttonDrink = value;
+      Serial.print("    [SET] buttonDrink");
+      Serial.print(" [TO] ");
+      Serial.println(value);
+
+  } else if (parameter == "buttonCheck") {
+      buttonCheck = value;
+      Serial.print("    [SET] buttonCheck");
+      Serial.print(" [TO] ");
+      Serial.println(value);
+
+  } else {
+    Serial.println("Invalid boot parameter");
+  }
 }
