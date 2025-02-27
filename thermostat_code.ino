@@ -33,7 +33,7 @@
 
 // Device-specific settings
 const char* deviceName = "thermostat";
-const char* currentSwVersion = "1.3.3";
+const char* currentSwVersion = "1.3.4";
 const char* deviceModel = "ESP32-NodeMCU";
 const char* deviceManufacturer = "BTM Engineering";
 String configurationUrl = "";
@@ -44,10 +44,10 @@ String  latestSwVersion;
 const char* WIFI_SSID = "UPC8F21BEF";
 const char* WIFI_PASS = "k7pp3aexkmQh";
 
-// EEPROM Address
-int SERVO_ADDRESS = 0;
-int MODE_ADDRESS = 1;
-int TEMP_ADDRESS = 2;
+// EEPROM Addresses
+int SERVO_ADDRESS = 0;                              // EEPROM address to store last servo angle
+int MODE_ADDRESS = 1;                               // EEPROM address to store last active mode 
+int TEMP_ADDRESS = 2;                               // EEPROM address to store last goal temperature setting
 
 // Measurement variables
 float celsius;
@@ -66,10 +66,16 @@ int previousAngle;                                  // Previous angle setting
 int servoLastAngle = 90;                            // Last servo angle before reboot
 
 // Refresh loop parameters
-int refreshRate = 60;                               // Measurement loop length [s]
+int measurementInterval = 60;                       // Measurement loop length [s]
 int refreshLoop = 1;                                // Number of refresh loops
 int connectRate = 300;                              // Connection check loop length [s]
-unsigned long previousMillis1 = 0;    
+unsigned long previousMillisMain = 0;
+unsigned long previousMillisMQTT = 0;               // MQTT reconnect timing
+unsigned long previousMillisWiFi = 0;               // WiFi reconnect timing
+const unsigned long mqttReconnectInterval = 5000;   // Check MQTT every 5 seconds
+const unsigned long wifiReconnectInterval = 5000;   // Check WiFi every 5 seconds 
+const unsigned long wifiRetryMaxInterval = 30000    // 30 seconds max
+const unsigned long mqttRetryMaxInterval = 60000    // 60 seconds max   
 
 // Temperature control parameters
 int onTemperature = 22;                             // Temperature setting for heating on state
@@ -198,7 +204,7 @@ String ontemperature_topic =                String("home/") + deviceName + Strin
 String offtemperature_topic =               String("home/") + deviceName + String("/parameters/offtemperature");
 String tempcontrolrange_topic =             String("home/") + deviceName + String("/parameters/tempcontrolrange");
 String safetytemp_topic =                   String("home/") + deviceName + String("/parameters/safetytemp");
-String refreshrate_topic =                  String("home/") + deviceName + String("/parameters/refreshrate");
+String measurementInterval_topic =          String("home/") + deviceName + String("/parameters/measurementInterval");
 String timeoffset_topic =                   String("home/") + deviceName + String("/parameters/timeoffset");
 String tempoffset_topic =                   String("home/") + deviceName + String("/parameters/tempoffset");
 
@@ -278,6 +284,9 @@ void mqttCallback(char* topic, byte* payload, unsigned int length)
   {
     handleTemperatureProgram(message);
   }
+
+  // Trigger next measurement loop
+  triggerLoop();
 }
 
 // Subscribe to an MQTT topic
@@ -657,7 +666,7 @@ void sendDiscoveries()
   publishMQTTDiscovery("Off Temperature", "sensor", "mdi:snowflake-alert", "°C", "temperature", "measurement", "diagnostic", offtemperature_topic);
   publishMQTTDiscovery("Control Range", "sensor", "mdi:car-cruise-control", "", "", "", "diagnostic", tempcontrolrange_topic);
   publishMQTTDiscovery("Safety Temperature", "sensor", "mdi:seatbelt", "°C", "temperature", "measurement", "diagnostic", safetytemp_topic);
-  publishMQTTDiscovery("Refresh Rate", "sensor", "mdi:refresh", "", "", "", "diagnostic", refreshrate_topic);
+  publishMQTTDiscovery("Refresh Rate", "sensor", "mdi:refresh", "", "", "", "diagnostic", measurementInterval_topic);
   publishMQTTDiscovery("Time Offset", "sensor", "mdi:clock-time-eight-outline", "", "", "", "diagnostic", timeoffset_topic);
   publishMQTTDiscovery("Temperature Offset", "sensor", "mdi:thermometer-chevron-up", "", "", "", "diagnostic", tempoffset_topic);
   // Climate
@@ -671,7 +680,7 @@ void sendParameters()
   publishMessage(offtemperature_topic, offTemperature, true);
   publishMessage(tempcontrolrange_topic, tempControlRange, true);
   publishMessage(safetytemp_topic, safetyTemp, true);
-  publishMessage(refreshrate_topic, refreshRate, true);
+  publishMessage(measurementInterval_topic, measurementInterval, true);
   publishMessage(timeoffset_topic, timeOffset, true);
   publishMessage(tempoffset_topic, tempCalibration, true);
 }
@@ -729,6 +738,11 @@ void setup()
   requestTemperatureSchedule();
   delay(1000);
 
+  // Open MQTT connection to receive parameters
+  for (int i = 0; i <= 100; i++) {
+    client.loop();
+    delay(50);
+  }
   // Verify received parameters
   sendParameters();
 
@@ -766,12 +780,6 @@ void setup()
   lcd.print(" ");
   lcd.print(mqttStatus);
   lcd.print(" ");
-
-  // Open MQTT connection to receive parameters
-  for (int i = 0; i <= 100; i++) {
-    client.loop();
-    delay(50);
-  }
 
   // Configure clock
   Serial.println("Initializing internal clock");
@@ -817,7 +825,7 @@ void setup()
   delay(3000);
 
   // Trigger next measurement loop
-  previousMillis1 = -refreshRate * 2000;
+  triggerLoop();
 
 }
 
@@ -831,13 +839,51 @@ void loop()
 
   client.loop();
 
-  if (currentMillis - previousMillis1 >= refreshRate * 1000) 
+  // Update connection status
+  wifiStatus = (WiFi.status() == WL_CONNECTED);
+  mqttStatus = client.connected();
+
+  // Frequent WiFi reconnect attempt (every 5 seconds)
+  if (!wifiStatus && (currentMillis - previousMillisWiFi >= wifiReconnectInterval)) 
+  {
+      previousMillisWiFi = currentMillis;
+      Serial.println("[WARNING] WiFi Disconnected! Attempting to reconnect...");
+      
+      if (connectWifi())  
+      { 
+          Serial.println("[WARNING] WiFi Reconnected!");
+          wifiReconnectInterval = 5000;  // Reset to 5s
+      }
+      else
+      { 
+          wifiReconnectInterval = min(wifiReconnectInterval * 2, wifiRetryMaxInterval); // Exponential backoff
+      }
+  }
+
+  // Frequent MQTT reconnect attempt (every 5 seconds)
+  if (!mqttStatus && (currentMillis - previousMillisMQTT >= mqttReconnectInterval)) 
+  {
+      previousMillisMQTT = currentMillis;
+      Serial.println("[WARNING] MQTT Disconnected! Attempting to reconnect...");
+      
+      if (connectMQTT())  
+      { 
+          Serial.println("[WARNING] MQTT Reconnected!");
+          mqttReconnectInterval = 5000;  // Reset to 5s
+      }
+      else
+      { 
+          mqttReconnectInterval = min(mqttReconnectInterval * 2, mqttRetryMaxInterval); // Exponential backoff
+      }
+  }
+
+  if (currentMillis - previousMillisMain >= measurementInterval * 1000) 
   { 
-    previousMillis1 = currentMillis;
+    previousMillisMain = currentMillis;
 
     // Uptime calculation
-    refreshLoop = refreshLoop + 1;
-    upTime = refreshLoop * refreshRate/60; //Return uptime in minutes
+    refreshLoop++;
+    upTime = (refreshLoop * measurementInterval) / 60; // Return uptime in minutes
     Serial.print("Loop Number: ");
     Serial.println(refreshLoop);
 
@@ -845,12 +891,7 @@ void loop()
     timeDay = rtc.getDayofWeek() - 1;
     timeStamp = rtc.getHour(true);
     timeMinutes = rtc.getMinute();
-    Serial.print("Day: ");
-    Serial.print(timeDay);
-    Serial.print("  Time: ");
-    Serial.print(timeStamp);
-    Serial.print(" : ");
-    Serial.println(timeMinutes);
+    Serial.printf("Day: %d  Time: %02d:%02d\n", timeDay, timeStamp, timeMinutes);
 
     // Read temperature data from BME280
     celsius = bme.readTemperature() + tempCalibration;     
@@ -870,44 +911,29 @@ void loop()
     Serial.print(pres);
     Serial.println(" hPa");
 
-    // Check connection states
-    if(WiFi.status() != WL_CONNECTED)
-    {
-      wifiStatus = false;
-    }
-    else
-    {
-      wifiStatus = true;
-      wifiStrength = WiFi.RSSI();
-    }
-     
-    mqttStatus = client.connected();
-
     if (!client.connected()) 
     {
       Serial.println("--------------------------------------");  
       Serial.println("MQTT connection: Not Connected");
 
       // Set servo if automatic mode on
-      if (autoMode)
+      if (mode == "auto")
       {
         tempGoal = tempSchedule[timeDay][timeStamp];
       }
 
       // In safe mode -> set temperature to latest tempGoal
       setTemperature(tempGoal,celsius);
-
-      // Trying to reconnect
-      connectWifi();
-      connectMQTT();
       
       // LCD Screen refresh
-      lcdRefresh("OFFLINE",timeStamp,timeMinutes, celsius, hum, heaterSetting, tempGoal, autoMode);
+      lcdRefresh("OFFLINE",timeStamp,timeMinutes, celsius, hum, heaterSetting, tempGoal, mode);
     }
     else
     {
       Serial.println("--------------------------------------");
       Serial.println("MQTT connection: Connected");
+
+      wifiStrength = WiFi.RSSI();
 
       // Send diagnostic data to the server
       publishMessage(wifi_strength_topic, (double)wifiStrength, false);
@@ -922,7 +948,7 @@ void loop()
       publishMessage(mode_topic, mode, false);   
     
       // Check for active mode
-      if (autoMode)
+      if (mode == "auto")
       {
         tempGoal = tempSchedule[timeDay][timeStamp];
       }
@@ -939,7 +965,7 @@ void loop()
       publishMessage(climate_mode_state_topic, mode, false);
 
       // Refresh LCD Screen
-      lcdRefresh("ONLINE",timeStamp,timeMinutes, celsius, hum, heaterSetting, tempGoal, autoMode);
+      lcdRefresh("ONLINE",timeStamp,timeMinutes, celsius, hum, heaterSetting, tempGoal, mode);
 
       Serial.println("--------------------------------------");
     }
@@ -1092,7 +1118,7 @@ void setTemperature(int tempGoal, float celsius)
 }
 
 // Refresh LCD display
-void lcdRefresh(String connectionStatus, int timeHour, int timeminutes, double temperature, double humidity, int heatingSetting, int temperatureGoal, bool autoMode)
+void lcdRefresh(String connectionStatus, int timeHour, int timeminutes, double temperature, double humidity, int heatingSetting, int temperatureGoal, String mode)
 {
         // LCD Screen refresh
         lcd.clear();
@@ -1111,8 +1137,18 @@ void lcdRefresh(String connectionStatus, int timeHour, int timeminutes, double t
         lcd.print(humidity,1);
         lcd.print("%"); 
         lcd.setCursor(0,1);
-        if(autoMode){lcd.print("A");}
-        else {lcd.print("M");}
+        if(mode == "auto")
+        {
+          lcd.print("A");
+        }
+        else if(mode == "heat") 
+        {
+          lcd.print("M");
+        }
+        else
+        {
+          lcd.print("C");
+        }
         lcd.print("|");
         lcd.print(temperatureGoal);
         lcd.print("| ");
@@ -1130,11 +1166,11 @@ void lcdUpdate(String currentFW, String latestFW)
 {
   lcd.clear();
   lcd.setCursor(0,0);
-  lcd.print("Updating FW:");
+  lcd.print("UPDATING FW:");
   lcd.setCursor(0,1);
   lcd.print(" ");
   lcd.print(currentFW);
-  lcd.print(" ->" );
+  lcd.print(" -> " );
   lcd.print(latestFW);
 }
 
@@ -1175,6 +1211,13 @@ void printLocalTime()
   Serial.println(&timeinfo, "%M");
   Serial.print("Second: ");
   Serial.println(&timeinfo, "%S");
+}
+
+// Triggers main measurement loop
+void triggerLoop()
+{
+  // Trigger next measurement loop
+  previousMillisMain = millis() - (measurementInterval * 1000);
 }
 
 // Handle target temperature received via MQTT
@@ -1293,6 +1336,18 @@ void handleCommand(String message)
     lcdCommand("rq schedule");
     requestTemperatureSchedule();
   }
+  if (message == "lcd on") 
+  {
+    Serial.println("Command received: LCD Display ON");
+    lcdCommand("lcd on");
+    requestTemperatureSchedule();
+  }
+  if (message == "lcd off") 
+  {
+    Serial.println("Command received: LCD Display OFF");
+    lcdCommand("lcd off");
+    requestTemperatureSchedule();
+  }
 }
 
 // Handle parameters received via MQTT
@@ -1314,7 +1369,7 @@ void handleParameters(const String& jsonPayload)
         !doc.containsKey("offTemperature") ||
         !doc.containsKey("tempControlRange") ||
         !doc.containsKey("safetyTemp") ||
-        !doc.containsKey("refreshRate") ||
+        !doc.containsKey("measurementInterval") ||
         !doc.containsKey("timeOffset") ||
         !doc.containsKey("tempOffset")) 
     {
@@ -1327,7 +1382,7 @@ void handleParameters(const String& jsonPayload)
     offTemperature = doc["offTemperature"].as<int>();
     tempControlRange = doc["tempControlRange"].as<float>();
     safetyTemp = doc["safetyTemp"].as<int>();
-    refreshRate = doc["refreshRate"].as<int>();
+    measurementInterval = doc["measurementInterval"].as<int>();
     timeOffset = doc["timeOffset"].as<int>();
     tempCalibration = doc["tempOffset"].as<float>();
 
@@ -1337,7 +1392,7 @@ void handleParameters(const String& jsonPayload)
     Serial.print("    offTemperature: "); Serial.println(offTemperature);
     Serial.print("    tempControlRange: "); Serial.println(tempControlRange);
     Serial.print("    safetyTemp: "); Serial.println(safetyTemp);
-    Serial.print("    refreshRate: "); Serial.println(refreshRate);
+    Serial.print("    measurementInterval: "); Serial.println(measurementInterval);
     Serial.print("    timeOffset: "); Serial.println(timeOffset);
     Serial.print("    tempOffset: "); Serial.println(tempCalibration);
 
