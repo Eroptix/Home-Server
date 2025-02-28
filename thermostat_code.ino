@@ -72,10 +72,10 @@ int connectRate = 300;                              // Connection check loop len
 unsigned long previousMillisMain = 0;
 unsigned long previousMillisMQTT = 0;               // MQTT reconnect timing
 unsigned long previousMillisWiFi = 0;               // WiFi reconnect timing
-const unsigned long mqttReconnectInterval = 5000;   // Check MQTT every 5 seconds
-const unsigned long wifiReconnectInterval = 5000;   // Check WiFi every 5 seconds 
-const unsigned long wifiRetryMaxInterval = 30000    // 30 seconds max
-const unsigned long mqttRetryMaxInterval = 60000    // 60 seconds max   
+unsigned long mqttReconnectInterval = 5000;   // Check MQTT every 5 seconds
+unsigned long wifiReconnectInterval = 5000;   // Check WiFi every 5 seconds 
+unsigned long wifiRetryMaxInterval = 30000;    // 30 seconds max
+unsigned long mqttRetryMaxInterval = 60000;    // 60 seconds max   
 
 // Temperature control parameters
 int onTemperature = 22;                             // Temperature setting for heating on state
@@ -213,7 +213,7 @@ WiFiClient espClient;
 PubSubClient client(espClient);
 
 // Connect to the predefined MQTT broker
-void connectMQTT()
+bool connectMQTT()
 {
   int attempts = 1;
   
@@ -245,6 +245,8 @@ void connectMQTT()
       delay(1000);
     }
   }
+
+  return mqttStatus;
 }
 
 // MQTT Callback Function
@@ -978,7 +980,7 @@ void loop()
 /************************** Device Functions ***********************************/
 
 // Open WiFi connection
-void connectWifi()
+bool connectWifi()
 {
   int attempts = 1;
   
@@ -1007,6 +1009,8 @@ void connectWifi()
   Serial.println(WiFi.localIP());
 
   wifiStatus = true;
+
+  return wifiStatus;
 }
 
 // Restart ESP device
