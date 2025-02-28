@@ -26,14 +26,14 @@
 /************************** Device Settings ***********************************/
 
 // Device-specific settings
-const char* deviceName = "thermostat";
-const char* currentSwVersion = "1.2.2";
+const char* deviceName = "smartender";
+const char* currentSwVersion = "1.0.1";
 const char* deviceModel = "ESP32-NodeMCU";
 const char* deviceManufacturer = "BTM Engineering";
 String configurationUrl = "";
 String  firmwareUrl;
 String  latestSwVersion;
-bool debugMode = false;
+bool debugMode = true;
 
 // Pin layout
 /*                             +-----------------------+
@@ -94,10 +94,17 @@ bool statusFan = true;
 int pumpPin[] = {99, pumpOnePin, pumpTwoPin, pumpThreePin, pumpFourPin, pumpFivePin, pumpSixPin};
   
 // Refresh loop parameters
-int refreshRate = 5; //Measurement loop length
-int connectRate = 300; //Connection check loop
+int refreshRate = 5;                                // Measurement loop length
 unsigned long previousMillis1 = 0;
 const long period1 = refreshRate * 1000;
+unsigned long previousMillisMQTT = 0;               // MQTT reconnect timing
+unsigned long previousMillisWiFi = 0;               // WiFi reconnect timing
+const unsigned long mqttReconnectInterval = 5000;   // Check MQTT every 5 seconds
+const unsigned long wifiReconnectInterval = 5000;   // Check WiFi every 5 seconds 
+const unsigned long wifiRetryMaxInterval = 30000    // 30 seconds max
+const unsigned long mqttRetryMaxInterval = 60000    // 60 seconds max 
+bool wifiStatus = false;                            // WiFi status indicator
+long wifiStrength;                                  // WiFi strength value 
 
 // Push button states
 int lastState = HIGH;
@@ -123,9 +130,7 @@ int headMovement = -32000;
 int headMaxSpeed = 5000;
 int headAcceleration = 3000;
 float scaleCalibrationFactor = 202;
-int stirrTime = 3000;
-bool headOperation = true;
-bool buttonCheck = true;
+bool buttonCheck = false;
 int glassWeight = 240;
 float dailyAmount = 0;
 
@@ -174,10 +179,9 @@ String motor_topic =                        String("home/") + deviceName + Strin
 String fan_topic =                          String("home/") + deviceName + String("/fan");
 String peltier_topic =                      String("home/") + deviceName + String("/peltier");
 
-
 // Parameters
-String headoperation_topic =                String("home/") + deviceName + String("/parameters/headoperation");
-String buttoncheck_topic =                  String("home/") + deviceName + String("/parameters/buttoncheck");
+String button_topic =                       String("home/") + deviceName + String("/parameters/button");
+String drink_topic =                        String("home/") + deviceName + String("/drink");
 String glassweight_topic =                  String("home/") + deviceName + String("/parameters/glassweight");
 
 // Initalize the Mqtt client instance
@@ -199,9 +203,7 @@ void connectMQTT()
       subscribeTopic(ota_response_topic);
       subscribeTopic(command_topic);
       subscribeTopic(parameter_response_topic);
-      subscribeTopic(climate_mode_command_topic);
-      subscribeTopic(climate_temperature_command_topic);
-      subscribeTopic(climate_schedule_response_topic);
+      subscribeTopic(drink_topic);
 
       // Send discovery payload
 	    sendDiscoveries();
@@ -230,6 +232,7 @@ void mqttCallback(char* topic, byte* payload, unsigned int length)
   Serial.print(topic);
   Serial.print(": ");
   Serial.println(message);
+  consoleLog("MQTT message received", 1);
 
   // Handle commands
   if (String(topic) == ota_response_topic) 
@@ -242,23 +245,12 @@ void mqttCallback(char* topic, byte* payload, unsigned int length)
   }
   if (String(topic) == command_topic) 
   {
-    handleCommand(message);
+    handleCommands(message);
   }
-  if (String(topic) == climate_temperature_command_topic) 
+  if (String(topic) == drink_topic) 
   {
-    handleTemperature(message);
+    handleDrinks(message);
   }
-  if (String(topic) == climate_mode_command_topic) 
-  {
-    handleMode(message);
-  }
-  if (String(topic) == climate_schedule_response_topic) 
-  {
-    handleTemperatureProgram(message);
-  }
-
-  // Trigger next measurement loop
-  triggerLoop();
 }
 
 // Subscribe to an MQTT topic
@@ -348,7 +340,7 @@ void parseOTAResponse(const String& response)
   // Deserialize the JSON
   DeserializationError error = deserializeJson(doc, response);
   if (error) {
-    Serial.print("JSON deserialization failed: ");
+    consoleLog("OTA update JSON deserialization failed ", 3);
     Serial.println(error.c_str());
     return;
   }
@@ -371,12 +363,12 @@ void parseOTAResponse(const String& response)
 // Handle OTA firmware update
 void performOTA() 
 {
-  Serial.println("[INFO] Starting OTA update...");
+  consoleLog("Starting OTA update process", 1);
   publishMessage(ota_status_topic.c_str(), "Updating", true);
   
   // Resource optimization: Check heap memory
   if (ESP.getFreeHeap() < 20000) {
-    Serial.println("[ERROR] Not enough memory for OTA. Aborting.");
+    consoleLog("Not enough memory for OTA update", 3);
     publishMessage(ota_status_topic.c_str(), "Failed", true);
     return;
   }
@@ -410,28 +402,29 @@ void performOTA()
       size_t written = Update.writeStream(*stream);
 
       if (written == contentLength && Update.end()) {
-        Serial.println("[INFO] OTA update successful!");
+        consoleLog("OTA update successful!", 1);
         Serial.print("		From: ");
         Serial.println(currentSwVersion);
         Serial.print("		To: ");
         Serial.println(latestSwVersion);
         Serial.print("		Size: ");
         Serial.println(written);
-        Serial.println("[INFO] Restarting device in 10 seconds");
+        consoleLog("Restarting device in 10 seconds", 1);
         publishMessage(ota_status_topic.c_str(), "Updated", true);
         delay(10000);
         ESP.restart();
       } else {
-        Serial.println("[ERROR] OTA update failed.");
+        consoleLog("OTA update failed", 3);
         Update.printError(Serial);
         publishMessage(ota_status_topic.c_str(), "Failed", true);
       }
     } else {
-      Serial.println("[ERROR] Not enough space for OTA update.");
+      consoleLog("Not enough space for OTA update", 3);
       publishMessage(ota_status_topic.c_str(), "Failed", true);
     }
   } else {
     Serial.printf("[ERROR] HTTP request failed with code: %d\n", httpCode);
+    consoleLog("OTA update failed", 3);
     publishMessage(ota_status_topic.c_str(), "Failed", true);
   }
 
@@ -458,11 +451,11 @@ void updateFirmwareOTA(String msg)
 
   // Compare versions
   if (latestSwVersion != currentSwVersion) {
-    Serial.println("[INFO] Firmware update available! Starting OTA update");
+    consoleLog("Firmware update available! Starting OTA update", 1);
     lcdUpdate(currentSwVersion,latestSwVersion);
     performOTA();
   } else {
-    Serial.println("[INFO] Device firmware is up to date.");
+    consoleLog("Device firmware is up to date.", 1);
     publishMessage(ota_status_topic.c_str(), "Up to date", true);
   }
 }
@@ -556,68 +549,10 @@ void publishMQTTDiscovery(String name, String deviceType,	String icon, String un
     publishMessage(topic.c_str(), payload.c_str(), true);
 }
 
-// Create a specific climate discovery payload
-void publishMQTTClimateDiscovery(String name, String deviceType) 
-{
-    // Construct IDs
-    String uniqueID = "climate-" + String(deviceName);
-    String objectID = "climate_" + String(deviceName);
-    
-    // Construct discovery topic
-    String topic = "homeassistant/" + deviceType + "/" + uniqueID + "/config";
-    
-    // Create a JSON document
-    DynamicJsonDocument doc(1024);  // Adjust the size if necessary
-
-    // Fill the JSON document with values
-    doc["name"] = name;
-    doc["unique_id"] = uniqueID;
-    doc["object_id"] = objectID;
-    doc["availability_topic"] = availability_topic;
-    doc["payload_available"] = "connected";
-    doc["payload_not_available"] = "connection lost";
-    doc["current_temperature_topic"] = climate_temperature_current_topic;
-    doc["temperature_state_topic"] = climate_temperature_state_topic;
-    doc["temperature_command_topic"] = climate_temperature_command_topic;
-    doc["mode_state_topic"] = climate_mode_state_topic;
-    doc["mode_command_topic"] = climate_mode_command_topic;
-    doc["min_temp"] = 12;
-    doc["max_temp"] = 30;
-    doc["temp_step"] = 1.0;
-    doc["precision"] = 0.1;
-    doc["retain"] = true;
-
-    JsonArray modes = doc.createNestedArray("modes");
-      modes.add("off");
-      modes.add("heat");
-      modes.add("cool");
-      modes.add("auto");
-
-    // Add the device object
-    JsonObject device = doc.createNestedObject("device");
-    JsonArray identifiers = device.createNestedArray("identifiers");
-    identifiers.add(deviceName);
-
-    device["name"] = deviceName;
-    device["model"] = deviceModel;
-    device["manufacturer"] = deviceManufacturer;
-
-    // Serialize the JSON document to a string
-    String payload;
-
-    if (serializeJson(doc, payload) == 0) {
-        Serial.println("Failed to serialize JSON!");
-        return;
-    }
-    
-    // Publish discovery message
-    publishMessage(topic.c_str(), payload.c_str(), true);
-}
-
 // Send discovery topics to Home Assistant
 void sendDiscoveries()
 {
-	// Diagnostics
+  // Diagnostics
   publishMQTTDiscovery("Up Time", "sensor","mdi:clock", "h", "duration", "total_increasing", "diagnostic", uptime_topic);
 	publishMQTTDiscovery("OTA Status", "sensor", "mdi:update", "", "", "", "diagnostic", ota_status_topic);
 	publishMQTTDiscovery("Firmware Version", "sensor", "mdi:application-outline", "", "", "", "diagnostic", firmware_topic);
@@ -627,29 +562,25 @@ void sendDiscoveries()
 	publishMQTTDiscovery("IP Address", "sensor", "mdi:ip-network-outline", "", "", "", "diagnostic", ip_topic);
   publishMQTTDiscovery("WiFi Strength", "sensor", "mdi-rss", "", "", "", "diagnostic", wifi_strength_topic);
   // Sensors
-  publishMQTTDiscovery("Temperature", "sensor", "mdi:home-thermometer", "°C", "temperature", "measurement", "", temperature_topic);
-  publishMQTTDiscovery("Pressure", "sensor", "mdi:gauge", "hPa", "pressure", "measurement", "", pressure_topic);
-  publishMQTTDiscovery("Humidity", "sensor", "mdi:water-percent", "%", "humidity", "measurement", "", humidity_topic);
-  publishMQTTDiscovery("Temp Goal", "sensor", "mdi:target", "°C", "temperature", "measurement", "", tempgoal_topic);
-  publishMQTTDiscovery("Mode", "sensor", "mdi:auto-mode", "", "", "", "", mode_topic);
-  publishMQTTDiscovery("Heating", "sensor", "mdi:heat-wave", "", "", "", "", heating_topic);
+  publishMQTTDiscovery("Weight", "sensor", "mdi:weight", "g", "weight", "measurement", "", weight_topic);
+  publishMQTTDiscovery("Daily Amount", "sensor", "mdi:cup", "L", "volume", "measurement", "", dailyamount_topic);
+  publishMQTTDiscovery("Pump 1", "binary_sensor", "mdi:pump", "", "moving", "", "measurement", pump1_topic);
+  publishMQTTDiscovery("Pump 2", "binary_sensor", "mdi:pump", "", "moving", "", "measurement", pump2_topic);
+  publishMQTTDiscovery("Pump 3", "binary_sensor", "mdi:pump", "", "moving", "", "measurement", pump3_topic);
+  publishMQTTDiscovery("Pump 4", "binary_sensor", "mdi:pump", "", "moving", "", "measurement", pump4_topic);
+  publishMQTTDiscovery("Pump 5", "binary_sensor", "mdi:pump", "", "moving", "", "measurement", pump5_topic);
+  publishMQTTDiscovery("Pump 6", "binary_sensor", "mdi:pump", "", "moving", "", "measurement", pump6_topic);
+  publishMQTTDiscovery("Fan", "binary_sensor", "mdi:fan", "", "running", "", "measurement", fan_topic);
+  publishMQTTDiscovery("Motor", "binary_sensor", "mdi:rotate-360", "", "running", "", "measurement", motor_topic);
+  publishMQTTDiscovery("Peltier", "binary_sensor", "mdi:snowflake-alert", "", "running", "", "measurement", pump6_topic);
   // Parameters
-  publishMQTTDiscovery("On Temperature", "sensor", "mdi:fire", "°C", "temperature", "measurement", "diagnostic", ontemperature_topic);
-  publishMQTTDiscovery("Off Temperature", "sensor", "mdi:snowflake-alert", "°C", "temperature", "measurement", "diagnostic", offtemperature_topic);
-  publishMQTTDiscovery("Control Range", "sensor", "mdi:car-cruise-control", "", "", "", "diagnostic", tempcontrolrange_topic);
-  publishMQTTDiscovery("Safety Temperature", "sensor", "mdi:seatbelt", "°C", "temperature", "measurement", "diagnostic", safetytemp_topic);
-  publishMQTTDiscovery("Refresh Rate", "sensor", "mdi:refresh", "", "", "", "diagnostic", measurementInterval_topic);
-  publishMQTTDiscovery("Time Offset", "sensor", "mdi:clock-time-eight-outline", "", "", "", "diagnostic", timeoffset_topic);
-  publishMQTTDiscovery("Temperature Offset", "sensor", "mdi:thermometer-chevron-up", "", "", "", "diagnostic", tempoffset_topic);
+  publishMQTTDiscovery("Glass Weight", "sensor", "mdi:glass-cocktail", "g", "weight", "measurement", "diagnostic", glassweight_topic);
 }
 
 // Send back received parameters to the server
 void sendParameters()
 {
-  publishMessage(buttonDrink_topic, buttonDrink, true);
-  publishMessage(lassWeight_topic, lassWeight, true);
-  publishMessage(buttonCheck_topic, buttonCheck, true);
-  publishMessage(headOperation_topic, headOperation, true);
+  publishMessage(glassWeight_topic, glassWeight, true);
 }
 
 /************************** Setup function ***********************************/
@@ -715,7 +646,7 @@ void setup(void)
   client.setServer(mqtt_server, mqtt_port);
   client.setCallback(mqttCallback);
   client.setBufferSize(4096);
-  connectMQTT();
+  mqttStatus = connectMQTT();
 
   // Announce availability
   publishMessage(availability_topic, "connected", true);
@@ -750,7 +681,7 @@ void setup(void)
   publishMessage(ip_topic, configurationUrl, true);
 
   // Initialize dashboard
-  consoleLog("Initializing dashboard");
+  consoleLog("Initializing dashboard", 1);
   publishMessage(pump1_topic, pumpStatus[1], false);
   publishMessage(pump2_topic, pumpStatus[2], false);
   publishMessage(pump3_topic, pumpStatus[3], false);
@@ -788,14 +719,49 @@ void loop(void)
 
   // LED control
   ledcWrite(ledChannel, dutyCycleLED);
+
+  // Update connection status
+  wifiStatus = (WiFi.status() == WL_CONNECTED);
+  mqttStatus = client.connected();
+
+  // Frequent WiFi reconnect attempt (every 5 seconds)
+  if (!wifiStatus && (currentMillis - previousMillisWiFi >= wifiReconnectInterval)) 
+  {
+      previousMillisWiFi = currentMillis;
+      Serial.println("[WARNING] WiFi Disconnected! Attempting to reconnect...");
+      
+      if (connectWifi())  
+      { 
+          Serial.println("[WARNING] WiFi Reconnected!");
+          wifiReconnectInterval = 5000;  // Reset to 5s
+      }
+      else
+      { 
+          wifiReconnectInterval = min(wifiReconnectInterval * 2, wifiRetryMaxInterval); // Exponential backoff
+      }
+  }
+
+  // Frequent MQTT reconnect attempt (every 5 seconds)
+  if (!mqttStatus && (currentMillis - previousMillisMQTT >= mqttReconnectInterval)) 
+  {
+      previousMillisMQTT = currentMillis;
+      Serial.println("[WARNING] MQTT Disconnected! Attempting to reconnect...");
+      
+      if (connectMQTT())  
+      { 
+          Serial.println("[WARNING] MQTT Reconnected!");
+          mqttReconnectInterval = 5000;  // Reset to 5s
+      }
+      else
+      { 
+          mqttReconnectInterval = min(mqttReconnectInterval * 2, mqttRetryMaxInterval); // Exponential backoff
+      }
+  }
   
   client.loop();
 
   // Check button state
-  if(buttonCheck) {checkPushButton();}
-
-  // Add delay to the loop
-  delay(200);
+  checkPushButton();
 
   // Standby loop
   if (currentMillis - previousMillis1 >= period1) 
@@ -806,11 +772,11 @@ void loop(void)
 
       if(standByWeight<100)
       {
-        consoleLog("Place your glass on the stand");
+        consoleLog("Place your glass on the stand", 1);
       }
       else 
       {
-        consoleLog("Ready to serve drinks");
+        consoleLog("Ready to serve drinks", 1);
       }
       
       // Check sleep time
@@ -824,14 +790,34 @@ void loop(void)
       publishMessage(calibration_topic, scaleCalibrationFactor);
       publishMessage(amount_topic, dailyAmount);
   }
-  
+
+  // Add delay to the loop
+  delay(200);
 }
 
 /************************** Device Functions ***********************************/
 
-void consoleLog(const char* consoleText)
+void consoleLog(const char* consoleText, int logLevel)
 {
-    //tb.sendTelemetryData("consoleLog", consoleText);
+    switch (logLevel) 
+    {
+      case 1:
+        Serial.print("[INFO] ");  
+        publishMessage(log_info_topic, consoleText);
+        break;
+      case 2:
+        Serial.print("[WARNING] ");
+        publishMessage(log_warning_topic, consoleText);
+        break;
+      case 3:
+        Serial.print("[ERROR] ");
+        publishMessage(log_error_topic, consoleText);
+        break;
+      default:
+        consoleLog("Unknown log warning level", 2);
+        break;
+    }
+
     Serial.println(consoleText);
 }
 
@@ -868,8 +854,8 @@ bool connectWifi()
 
 void restartESP()
 {
-  Serial.println("Rebooting ESP32");
-  delay(2000);
+  consoleLog("Rebooting ESP32 device");
+  delay(5000);
   esp_restart();
 }
 
@@ -897,13 +883,15 @@ long readWeightSensor()
 
 void measureDrink(float drinkVolume, int scaleCalibrationOffset)
 {
+  if(!debugMode)
+  {
     long currentWeight = 0;
     int measureInterval = 100;
     int maxMeasureTime = 30000;
     
     // Zero out scale
     scale.tare();
-
+  
     // Run until selected volume
     int i = 0;
     while(currentWeight < drinkVolume - scaleCalibrationOffset)
@@ -911,19 +899,29 @@ void measureDrink(float drinkVolume, int scaleCalibrationOffset)
       i = i + measureInterval;
       delay(measureInterval);
       currentWeight = readWeightSensor();
-
+  
       // Check for error
       if(i > maxMeasureTime)
       {
-        consoleLog("[ERROR] Maximum measurement time reached");
+        consoleLog("Maximum measurement time reached", 3);
         break;
       }
     }
+  }
+  else
+  {
+    // Simulated measurement
+    while(currentWeight < drinkVolume - scaleCalibrationOffset)
+    {
+      delay(200);
+      currentWeight++;
+    }
+  }
 }
 
 void waitForRemove()
 {
-  consoleLog("Remove drink from table");
+  consoleLog("Remove finished drink from the table", 1);
   
   // Wait for drink removal
   while(readWeightSensor()> 2)
@@ -939,8 +937,7 @@ void waitForRemove()
 
 void stepperHoming()
 {
-  Serial.println("Starting homing function");
-  consoleLog("Homing stepper Z-axis");
+  consoleLog("Homing stepper Z-axis", 1);
 
   delay(1000);
   
@@ -960,8 +957,7 @@ void stepperHoming()
     stepper.runToNewPosition(stepper.currentPosition() - 100); //Move down
   }
 
-  Serial.println("Homing finished");
-  consoleLog("Stepper homing finished");
+  consoleLog("Stepper homing finished", 1);
   stepper.setCurrentPosition(0);
 
   // Set the maximum speed and acceleration for operation
@@ -1093,7 +1089,7 @@ void calibrateScale(int calibrationWeight)
   Serial.println(calibrationWeight);
   Serial.println("      ");
 
-  consoleLog("Scale calibration started");
+  consoleLog("Scale calibration process started", 1);
 
   // Restart weight sensor
   Serial.println("  Turning off weight sensor");
@@ -1105,17 +1101,29 @@ void calibrateScale(int calibrationWeight)
   // Reset empty scale 
   scale.tare();
 
-  Serial.println("  Waiting for glass placement");
+  consoleLog("Place etalon glass for calibration", 1);
   
-  // Wait until calibrationWeight placed on the scale
-  while(readWeightSensor() < 100)
-  {
-    ledcWrite(ledChannel, dutyCycleLED);
-    delay(500);
-    ledcWrite(ledChannel, 0);
-    delay(500);
+  // Detect glass placement with debounce
+  unsigned long glassDetectedTime = 0;
+  while (true) {
+      if (readWeightSensor() > 100) {
+          if (glassDetectedTime == 0) {
+              glassDetectedTime = millis(); // Start debounce timer
+          } 
+          else if (millis() - glassDetectedTime > 1000) { // Confirm detection
+              consoleLog("Glass placement detected for calibration", 1);
+              break;
+          }
+      } 
+      else {
+          glassDetectedTime = 0; // Reset if weight is removed
+      }
+      
+      ledcWrite(ledChannel, dutyCycleLED);
+      delay(500);
+      ledcWrite(ledChannel, 0);
+      delay(500);
   }
-  Serial.print("  Glass placement detected ");
   
   long currentWeight = readWeightSensor();
   int iterationNumber = 0;
@@ -1133,7 +1141,7 @@ void calibrateScale(int calibrationWeight)
     
     scale.set_scale(scaleCalibrationFactor);
 
-    delay(500);
+    delay(300);
 
     // Read current weight after calibration
     currentWeight = readWeightSensor();
@@ -1146,69 +1154,23 @@ void calibrateScale(int calibrationWeight)
     if(iterationNumber > 200)
     {
       blinkLED(100, 10);
+      consoleLog("Failed to calibrate weight sensors", 3);
       break;
     }
   }
   
   // Finished calibration
   publishMessage(calibration_topic, scaleCalibrationFactor);
-  consoleLog("Scale calibration finished");
+  consoleLog("Scale calibration finished", 1);
 
   Serial.println("      ");
   Serial.println("      Finished calibration");
   Serial.println("---------------------------------");
 }
 
-void reCalibrateScale(int calibrationWeight)
-{ 
-  Serial.println("---------------------------------");
-  Serial.println("      Starting calibration");
-  Serial.print("  Calibration weight goal: ");
-  Serial.println(calibrationWeight);
-  Serial.println("      ");
-
-  consoleLog("Scale calibration started");
+void adjustScaleCalibration(int calibrationWeight)
+{
   
-  long currentWeight = readWeightSensor();
-  int iterationNumber = 0;
-
-  Serial.println(currentWeight); 
-
-  // Start calibration
-  while(abs(currentWeight - calibrationWeight)>2)
-  {
-    // Adjust scale factor
-    scaleCalibrationFactor = scaleCalibrationFactor + (currentWeight - calibrationWeight)*0.1;
-    
-    Serial.print("  Calibration factor: ");
-    Serial.print(scaleCalibrationFactor);
-    
-    scale.set_scale(scaleCalibrationFactor);
-
-    delay(500);
-
-    // Read current weight after calibration
-    currentWeight = readWeightSensor();
-    
-    Serial.print("  Current weight: ");
-    Serial.println(currentWeight);
-    
-    // Check if we are stuck
-    iterationNumber++;
-    if(iterationNumber > 200)
-    {
-      blinkLED(100, 10);
-      break;
-    }
-  }
-  
-  // Finished calibration
-  publishMessage(calibration_topic, scaleCalibrationFactor);
-  consoleLog("Scale calibration finished");
-
-  Serial.println("      ");
-  Serial.println("      Finished calibration");
-  Serial.println("---------------------------------");
 }
 
 void sleepModeON()
@@ -1217,7 +1179,7 @@ void sleepModeON()
     Serial.println("        Sleep Mode ON");
     Serial.println("--------------------------------");
 
-    consoleLog("Entering sleep mode");
+    consoleLog("Entering sleep mode", 1);
     
     // Set sleep brightness
     while(dutyCycleLED > sleepDutyCycleLED)
@@ -1240,7 +1202,7 @@ void sleepModeOFF()
     Serial.println("        Sleep Mode OFF");
     Serial.println("--------------------------------");
 
-    consoleLog("Waking up from sleep mode");
+    consoleLog("Waking up from sleep mode", 1);
     
     // Reset activity timer
     activityMillis = millis();
@@ -1285,8 +1247,9 @@ void checkPushButton()
             // Sleep mode off
             sleepModeOFF();
             
-            drinks(buttonDrink);
-            
+            // Publish manual drink trigger
+            //publishMessage(button_topic, "true", false);
+
             isLongDetected = true;
         }
     }
@@ -1299,141 +1262,73 @@ void dispense(int drink, float amount)
 {
      // Update daily drink amount
      dailyAmount = dailyAmount + amount;
-     tb.sendAttributeData("dailyAmount",dailyAmount);
      publishMessage(amount_topic, dailyAmount);
 
      switch (drink) 
      {
-       case 1:
-         pump(waterPump,true);
+      case 1:
+         pump(1,true);
          measureDrink(amount,20);
-         pump(waterPump,false);
+         pump(1,false);
          break;
-       case 2:
-         pump(syrup1Pump,true);
+      case 2:
+         pump(2,true);
          measureDrink(amount,0);
-         pump(syrup1Pump,false);
+         pump(2,false);
          break;
-       case 3:
-         pump(syrup2Pump,true);
+      case 3:
+         pump(3,true);
          measureDrink(amount,0);
-         pump(syrup2Pump,false);
+         pump(3,false);
+         break;
+      case 4:
+         pump(4,true);
+         measureDrink(amount,0);
+         pump(4,false);
+         break;
+      case 5:
+         pump(5,true);
+         measureDrink(amount,0);
+         pump(5,false);
+         break;
+      case 6:
+         pump(6,true);
+         measureDrink(amount,0);
+         pump(6,false);
          break;
        default:
          // statements
-         Serial.println("   Unknown dispense command!");
-         break;
-     }
-}
-
-void drinks(int drinkID)
-{
-     // Drink menu
-     //  - 1: Water
-     //  - 2: Syrup1
-     //  - 3: Syrup2
-     //  - 4: Vodka
-
-     consoleLog("Drink order received");
-
-     switch (drinkID) 
-     {
-       case 11:
-            Serial.println("  |MIXING: Water 1dl|  ");
-            dispense(1,100);
-            
-            waitForRemove();
-         break;
-       case 12:
-            Serial.println("  |MIXING: Water 2dl|  ");
-            dispense(1,200);
-            
-            waitForRemove();
-         break;
-       case 21:
-            Serial.println("  |MIXING: Syrup1 2dl|  ");
-            if(headOperation){stepper.runToNewPosition(headMovement);}
-            
-            dispense(2,15); 
-            
-            delay(1000);   
-             
-            dispense(1,175);
-            
-            motorStirring(stirrTime);
-            
-            if(headOperation){stepper.runToNewPosition(0);}
-            
-            waitForRemove();
-         break;
-       case 22:
-            Serial.println("  |MIXING: Syrup2 2dl|  ");
-            if(headOperation){stepper.runToNewPosition(headMovement);}
-            
-            dispense(3,5); 
-            
-            delay(1000);   
-             
-            dispense(1,180);
-            
-            motorStirring(stirrTime);
-            
-            if(headOperation){stepper.runToNewPosition(0);}
-            
-            waitForRemove();
-         break;
-       case 31:
-            Serial.println("  |MIXING: Vodka Soda|  ");
-            if(headOperation){stepper.runToNewPosition(headMovement);}
-            
-            dispense(4,20);
-            
-            delay(1000);
-            
-            dispense(2,10);
-            
-            delay(1000);
-            
-            dispense(1,130);
-            
-            motorStirring(stirrTime);
-            
-            if(headOperation){stepper.runToNewPosition(0);}
-            
-            waitForRemove();
-         break;
-       default:
-         // statements
+         consoleLog("Unknown dispense command received", 2);
          break;
      }
 }
 
 // Handle commands received via MQTT
-void handleCommand(String message) 
+void handleCommands(String message) 
 {
   if (message == "reboot") 
   {
-    Serial.println("Command received: Reboot");
+    consoleLog("Command received: Reboot", 1);
     restartESP();
   }
   if (message == "request parameters") 
   {
-    Serial.println("Command received: Parameter Request");
+    consoleLog("Command received: Parameter Request", 1);
     requestParameters();
   }
   if (message == "send parameters") 
   {
-    Serial.println("Command received: Parameter Send");
+    consoleLog("Command received: Parameter Send", 1);
     sendParameters();
   }
   if (message == "send discoveries") 
   {
-    Serial.println("Command received: Discovery Send");
+    consoleLog("Command received: Discovery Send", 1);
     sendDiscoveries();
   }
   if (message == "servo off") 
   {
-    Serial.println("Command received: Servo Off");
+    consoleLog("Command received: Servo Off", 1);
     servo.detach();
   }
 }
@@ -1447,31 +1342,121 @@ void handleParameters(const String& jsonPayload)
     // Deserialize the JSON
     DeserializationError error = deserializeJson(doc, jsonPayload);
     if (error) {
-        Serial.print("JSON Parsing Failed: ");
+        consoleLog("Parameter JSON parsing failed: ", 2);
         Serial.println(error.c_str());
         return;
     }
 
     // Check if all expected parameters exist before assigning values
-    if (!doc.containsKey("buttonDrink") ||
-        !doc.containsKey("glassWeight") ||
-        !doc.containsKey("buttonCheck") ||
-        !doc.containsKey("headOperation")
+    if (!doc.containsKey("glassWeigth"))
     {
-        Serial.println("Error: Missing one or more required parameters.");
+        consoleLog("Missing one or more required parameters", 2);
         return;
     }
 
     // Extract values
-    buttonDrink = doc["buttonDrink"].as<int>();
     glassWeight = doc["glassWeight"].as<int>();
-    buttonCheck = doc["buttonCheck"].as<float>();
-    headOperation = doc["headOperation"].as<int>();
 
     // Print extracted values
     Serial.println("  Extracted Parameters:");
-    Serial.print("    buttonDrink: "); Serial.println(buttonDrink);
     Serial.print("    glassWeight: "); Serial.println(glassWeight);
-    Serial.print("    buttonCheck: "); Serial.println(buttonCheck);
-    Serial.print("    headOperation: "); Serial.println(headOperation);
+
+    consoleLog("Parameters received and saved", 1);
+}
+
+// Handle drink recipes received via MQTT
+void handleDrinks(const String& jsonPayload) 
+{
+  // Sample JSON recipe
+  /*  
+  {
+    "name": "Mojito",
+    "pump1": 50,
+    "pump2": 20,
+    "pump3": 0,
+    "pump4": 30,
+    "pump5": 0,
+    "pump6": 10,
+    "headMovement": true,
+    "stirring": 5
+  }
+  */
+
+  // Create a JSON document (adjust size if needed)
+  StaticJsonDocument<1024> doc;
+
+  // Deserialize the JSON
+  DeserializationError error = deserializeJson(doc, jsonPayload);
+  if (error) {
+      consoleLog("Drink recipe JSON parsing failed: ", 2);
+      Serial.println(error.c_str());
+      return;
+  }
+
+  // Check if all expected parameters exist before assigning values
+  if (!doc.containsKey("name") ||
+      !doc.containsKey("pump1") ||
+      !doc.containsKey("pump2") ||
+      !doc.containsKey("pump3") ||
+      !doc.containsKey("pump4") ||
+      !doc.containsKey("pump5") ||
+      !doc.containsKey("pump6") ||
+      !doc.containsKey("headMovement") ||
+      !doc.containsKey("stirring"))
+  {
+      consoleLog("Missing one or more required recipe parameters", 2);
+      return;
+  }
+
+  // Extract values
+  String name     = doc["name"].as<String>();
+  int pump1       = doc["pump1"].as<int>();
+  int pump2       = doc["pump2"].as<int>();
+  int pump3       = doc["pump3"].as<int>();
+  int pump4       = doc["pump4"].as<int>();
+  int pump5       = doc["pump5"].as<int>();
+  int pump6       = doc["pump6"].as<int>();
+  bool head       = doc["headMovement"].as<bool>();
+  int stirring    = doc["stirring"].as<int>();
+
+  // Print extracted values
+  Serial.println("  Extracted Recipe Parameters:");
+  Serial.print("    name: ");             Serial.println(name);
+  Serial.print("    pump1: ");            Serial.println(pump1);
+  Serial.print("    pump2: ");            Serial.println(pump2);
+  Serial.print("    pump3: ");            Serial.println(pump3);
+  Serial.print("    pump4: ");            Serial.println(pump4);
+  Serial.print("    pump5: ");            Serial.println(pump5);
+  Serial.print("    pump6: ");            Serial.println(pump6);
+  Serial.print("    headMovement: ");     Serial.println(head);
+  Serial.println("    stirring: ");       Serial.println(stirring);
+
+  // Check total volume
+  int totalVolume = pump1 + pump2 + pump3 + pump4 + pump5 + pump6;
+  if(totalVolume > 250)
+  {
+    consoleLog("Total requested drink volume exceeds maximum", 2);
+    return;
+  }
+
+  // Start dispensing drink with the received recipe
+  consoleLog("Starting mixing drink: " + name, 1);
+
+  if(head){stepper.runToNewPosition(headMovement);}       // Lower stirring head
+  if(pump1 != 0){dispense(1, pump1);}                     // Dispense with pump1
+  delay(1000);
+  if(pump2 != 0){dispense(2, pump2);}                     // Dispense with pump2
+  delay(1000);
+  if(pump3 != 0){dispense(3, pump3);}                     // Dispense with pump3
+  delay(1000);
+  if(pump4 != 0){dispense(4, pump4);}                     // Dispense with pump4
+  delay(1000);
+  if(pump5 != 0){dispense(5, pump5);}                     // Dispense with pump5
+  delay(1000);
+  if(pump6 != 0){dispense(6, pump6);}                     // Dispense with pump6
+  delay(1000);
+  if(stirring != 0){motorStirring(stirring);}             // Stir the finished drink
+  if(head){stepper.runToNewPosition(0);}                  // Raise stirring head
+
+  consoleLog("Drink finished", 1);
 }
