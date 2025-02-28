@@ -8,7 +8,6 @@
 
 /************************** Libraries ***********************************/
 #include <WiFi.h>
-#include <ThingsBoard.h>
 #include <OneWire.h>
 #include <DallasTemperature.h>
 #include <ESPmDNS.h>
@@ -18,7 +17,10 @@
 #include "soc/soc.h"
 #include "soc/rtc_cntl_reg.h"
 #include <Espressif_Updater.h>
-#include <Arduino_MQTT_Client.h>
+#include <HTTPClient.h>
+#include <Update.h>
+#include <ArduinoJson.h>
+#include <PubSubClient.h>
 
 #define WIFI_SSID "UPC8F21BEF"
 #define WIFI_PASS "k7pp3aexkmQh"
@@ -27,13 +29,13 @@
 
 // Device-specific settings
 const char* deviceName = "smartender";
-const char* currentSwVersion = "1.0.1";
+const char* currentSwVersion = "1.0.4";
 const char* deviceModel = "ESP32-NodeMCU";
 const char* deviceManufacturer = "BTM Engineering";
 String configurationUrl = "";
 String  firmwareUrl;
 String  latestSwVersion;
-bool debugMode = true;
+bool debugMode = false;
 
 // Pin layout
 /*                             +-----------------------+
@@ -99,10 +101,10 @@ unsigned long previousMillis1 = 0;
 const long period1 = refreshRate * 1000;
 unsigned long previousMillisMQTT = 0;               // MQTT reconnect timing
 unsigned long previousMillisWiFi = 0;               // WiFi reconnect timing
-const unsigned long mqttReconnectInterval = 5000;   // Check MQTT every 5 seconds
-const unsigned long wifiReconnectInterval = 5000;   // Check WiFi every 5 seconds 
-const unsigned long wifiRetryMaxInterval = 30000    // 30 seconds max
-const unsigned long mqttRetryMaxInterval = 60000    // 60 seconds max 
+unsigned long mqttReconnectInterval = 5000;   // Check MQTT every 5 seconds
+unsigned long wifiReconnectInterval = 5000;   // Check WiFi every 5 seconds 
+unsigned long wifiRetryMaxInterval = 30000;    // 30 seconds max
+unsigned long mqttRetryMaxInterval = 60000;    // 60 seconds max 
 bool wifiStatus = false;                            // WiFi status indicator
 long wifiStrength;                                  // WiFi strength value 
 
@@ -165,6 +167,7 @@ String command_topic =                      String("home/") + deviceName + Strin
 String uptime_topic =                       String("home/") + deviceName + String("/uptime");
 String firmware_topic =                     String("home/") + deviceName + String("/firmware");
 String ip_topic =                           String("home/") + deviceName + String("/ip");
+String wifi_strength_topic =                String("home/") + deviceName + String("/wifi/strength");
 
 // Sensors
 String weight_topic =                       String("home/") + deviceName + String("/weight");
@@ -183,13 +186,14 @@ String peltier_topic =                      String("home/") + deviceName + Strin
 String button_topic =                       String("home/") + deviceName + String("/parameters/button");
 String drink_topic =                        String("home/") + deviceName + String("/drink");
 String glassweight_topic =                  String("home/") + deviceName + String("/parameters/glassweight");
+String calibration_topic =                  String("home/") + deviceName + String("/calibration");
 
 // Initalize the Mqtt client instance
 WiFiClient espClient;
 PubSubClient client(espClient);
 
 // Connect to the predefined MQTT broker
-void connectMQTT()
+bool connectMQTT()
 {
   int attempts = 1;
   
@@ -219,6 +223,8 @@ void connectMQTT()
       delay(1000);
     }
   }
+
+  return mqttStatus;
 }
 
 // MQTT Callback Function
@@ -232,24 +238,27 @@ void mqttCallback(char* topic, byte* payload, unsigned int length)
   Serial.print(topic);
   Serial.print(": ");
   Serial.println(message);
-  consoleLog("MQTT message received", 1);
 
   // Handle commands
   if (String(topic) == ota_response_topic) 
   {
     updateFirmwareOTA(message);
   }
-  if (String(topic) == parameter_response_topic) 
+  else if (String(topic) == parameter_response_topic) 
   {
     handleParameters(message);
   }
-  if (String(topic) == command_topic) 
+  else if (String(topic) == command_topic) 
   {
     handleCommands(message);
   }
-  if (String(topic) == drink_topic) 
+  else if (String(topic) == drink_topic) 
   {
     handleDrinks(message);
+  }
+  else
+  {
+    consoleLog("Unknown MQTT message received", 2);
   }
 }
 
@@ -452,7 +461,6 @@ void updateFirmwareOTA(String msg)
   // Compare versions
   if (latestSwVersion != currentSwVersion) {
     consoleLog("Firmware update available! Starting OTA update", 1);
-    lcdUpdate(currentSwVersion,latestSwVersion);
     performOTA();
   } else {
     consoleLog("Device firmware is up to date.", 1);
@@ -466,14 +474,6 @@ void requestParameters()
   String requestPayload = String("{\"device\":\"") + deviceName + String("\"}");
   Serial.printf("[INFO] Publishing parameter request to MQTT: %s\n", requestPayload.c_str());
   client.publish(parameter_request_topic.c_str(), requestPayload.c_str());
-}
-
-// Request server-side temperature schedule from Home Assistant
-void requestTemperatureSchedule()
-{
-  String requestPayload = String("{\"device\":\"") + deviceName + String("\"}");
-  Serial.printf("[INFO] Publishing temperature schedule request to MQTT: %s\n", requestPayload.c_str());
-  client.publish(climate_schedule_request_topic.c_str(), requestPayload.c_str());
 }
 
 // Remove white spaces from a String input
@@ -554,33 +554,55 @@ void sendDiscoveries()
 {
   // Diagnostics
   publishMQTTDiscovery("Up Time", "sensor","mdi:clock", "h", "duration", "total_increasing", "diagnostic", uptime_topic);
+  delay(200);
 	publishMQTTDiscovery("OTA Status", "sensor", "mdi:update", "", "", "", "diagnostic", ota_status_topic);
+  delay(200);
 	publishMQTTDiscovery("Firmware Version", "sensor", "mdi:application-outline", "", "", "", "diagnostic", firmware_topic);
+  delay(200);
 	publishMQTTDiscovery("Error", "sensor", "mdi:alert-circle-outline", "", "", "", "diagnostic", log_error_topic);
+  delay(200);
 	publishMQTTDiscovery("Warning", "sensor", "mdi:shield-alert-outline", "", "", "", "diagnostic", log_warning_topic);
+  delay(200);
 	publishMQTTDiscovery("Info", "sensor", "mdi:information-outline", "", "", "", "diagnostic", log_info_topic);
+  delay(200);
 	publishMQTTDiscovery("IP Address", "sensor", "mdi:ip-network-outline", "", "", "", "diagnostic", ip_topic);
+  delay(200);
   publishMQTTDiscovery("WiFi Strength", "sensor", "mdi-rss", "", "", "", "diagnostic", wifi_strength_topic);
+  delay(200);
   // Sensors
   publishMQTTDiscovery("Weight", "sensor", "mdi:weight", "g", "weight", "measurement", "", weight_topic);
+  delay(200);
   publishMQTTDiscovery("Daily Amount", "sensor", "mdi:cup", "L", "volume", "measurement", "", dailyamount_topic);
-  publishMQTTDiscovery("Pump 1", "binary_sensor", "mdi:pump", "", "moving", "", "measurement", pump1_topic);
-  publishMQTTDiscovery("Pump 2", "binary_sensor", "mdi:pump", "", "moving", "", "measurement", pump2_topic);
-  publishMQTTDiscovery("Pump 3", "binary_sensor", "mdi:pump", "", "moving", "", "measurement", pump3_topic);
-  publishMQTTDiscovery("Pump 4", "binary_sensor", "mdi:pump", "", "moving", "", "measurement", pump4_topic);
-  publishMQTTDiscovery("Pump 5", "binary_sensor", "mdi:pump", "", "moving", "", "measurement", pump5_topic);
-  publishMQTTDiscovery("Pump 6", "binary_sensor", "mdi:pump", "", "moving", "", "measurement", pump6_topic);
-  publishMQTTDiscovery("Fan", "binary_sensor", "mdi:fan", "", "running", "", "measurement", fan_topic);
-  publishMQTTDiscovery("Motor", "binary_sensor", "mdi:rotate-360", "", "running", "", "measurement", motor_topic);
-  publishMQTTDiscovery("Peltier", "binary_sensor", "mdi:snowflake-alert", "", "running", "", "measurement", pump6_topic);
+  delay(200);
+  publishMQTTDiscovery("Pump 1", "binary_sensor", "mdi:pump", "", "moving", "", "", pump1_topic);
+  delay(200);
+  publishMQTTDiscovery("Pump 2", "binary_sensor", "mdi:pump", "", "moving", "", "", pump2_topic);
+  delay(200);
+  publishMQTTDiscovery("Pump 3", "binary_sensor", "mdi:pump", "", "moving", "", "", pump3_topic);
+  delay(200);
+  publishMQTTDiscovery("Pump 4", "binary_sensor", "mdi:pump", "", "moving", "", "", pump4_topic);
+  delay(200);
+  publishMQTTDiscovery("Pump 5", "binary_sensor", "mdi:pump", "", "moving", "", "", pump5_topic);
+  delay(200);
+  publishMQTTDiscovery("Pump 6", "binary_sensor", "mdi:pump", "", "moving", "", "", pump6_topic);
+  delay(200);
+  publishMQTTDiscovery("Fan", "binary_sensor", "mdi:fan", "", "running", "", "", fan_topic);
+  delay(200);
+  publishMQTTDiscovery("Motor", "binary_sensor", "mdi:rotate-360", "", "running", "", "", motor_topic);
+  delay(200);
+  publishMQTTDiscovery("Peltier", "binary_sensor", "mdi:snowflake-alert", "", "running", "", "", peltier_topic);
+  delay(200);
   // Parameters
   publishMQTTDiscovery("Glass Weight", "sensor", "mdi:glass-cocktail", "g", "weight", "measurement", "diagnostic", glassweight_topic);
+  delay(200);
+  publishMQTTDiscovery("Calibration", "sensor", "mdi:calculator-variant-outline", "", "", "measurement", "diagnostic", calibration_topic);
+  delay(200);
 }
 
 // Send back received parameters to the server
 void sendParameters()
 {
-  publishMessage(glassWeight_topic, glassWeight, true);
+  publishMessage(glassweight_topic, glassWeight, true);
 }
 
 /************************** Setup function ***********************************/
@@ -589,7 +611,7 @@ void setup(void)
 {
   Serial.begin(115200);
 
-  WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0); //disable   detector 
+  //WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0); //disable   detector 
 
   // Setup pins for MOSFET
   digitalWrite(motorPin,LOW);
@@ -646,6 +668,7 @@ void setup(void)
   client.setServer(mqtt_server, mqtt_port);
   client.setCallback(mqttCallback);
   client.setBufferSize(4096);
+  client.setKeepAlive(120);
   mqttStatus = connectMQTT();
 
   // Announce availability
@@ -682,15 +705,15 @@ void setup(void)
 
   // Initialize dashboard
   consoleLog("Initializing dashboard", 1);
-  publishMessage(pump1_topic, pumpStatus[1], false);
-  publishMessage(pump2_topic, pumpStatus[2], false);
-  publishMessage(pump3_topic, pumpStatus[3], false);
-  publishMessage(pump4_topic, pumpStatus[4], false);
-  publishMessage(pump5_topic, pumpStatus[5], false);
-  publishMessage(pump6_topic, pumpStatus[6], false);
-  publishMessage(motor_topic, statusMotor, false);
-  publishMessage(fan_topic, statusFan, false);
-  publishMessage(peltier_topic, statusPeltier, false);
+  publishMessage(pump1_topic, pumpStatus[1] ? "ON" : "OFF", false);
+  publishMessage(pump2_topic, pumpStatus[2] ? "ON" : "OFF", false);
+  publishMessage(pump3_topic, pumpStatus[3] ? "ON" : "OFF", false);
+  publishMessage(pump4_topic, pumpStatus[4] ? "ON" : "OFF", false);
+  publishMessage(pump5_topic, pumpStatus[5] ? "ON" : "OFF", false);
+  publishMessage(pump6_topic, pumpStatus[6] ? "ON" : "OFF", false);
+  publishMessage(motor_topic, statusMotor ? "ON" : "OFF", false);
+  publishMessage(fan_topic, statusFan ? "ON" : "OFF", false);
+  publishMessage(peltier_topic, statusPeltier ? "ON" : "OFF", false);
   publishMessage(dailyamount_topic, dailyAmount, false);
   
   delay(2000);
@@ -787,8 +810,8 @@ void loop(void)
       }
 
       // Refresh dashboard
-      publishMessage(calibration_topic, scaleCalibrationFactor);
-      publishMessage(amount_topic, dailyAmount);
+      publishMessage(calibration_topic, (double)scaleCalibrationFactor, false);
+      publishMessage(dailyamount_topic, (double)dailyAmount, false);
   }
 
   // Add delay to the loop
@@ -797,21 +820,21 @@ void loop(void)
 
 /************************** Device Functions ***********************************/
 
-void consoleLog(const char* consoleText, int logLevel)
+void consoleLog(String consoleText, int logLevel)
 {
     switch (logLevel) 
     {
       case 1:
         Serial.print("[INFO] ");  
-        publishMessage(log_info_topic, consoleText);
+        publishMessage(log_info_topic, consoleText, false);
         break;
       case 2:
         Serial.print("[WARNING] ");
-        publishMessage(log_warning_topic, consoleText);
+        publishMessage(log_warning_topic, consoleText, false);
         break;
       case 3:
         Serial.print("[ERROR] ");
-        publishMessage(log_error_topic, consoleText);
+        publishMessage(log_error_topic, consoleText, false);
         break;
       default:
         consoleLog("Unknown log warning level", 2);
@@ -854,7 +877,7 @@ bool connectWifi()
 
 void restartESP()
 {
-  consoleLog("Rebooting ESP32 device");
+  consoleLog("Rebooting ESP32 device", 1);
   delay(5000);
   esp_restart();
 }
@@ -876,7 +899,7 @@ long readWeightSensor()
   //Serial.print(weight);
   //Serial.println("g");
 
-  publishMessage(weight_topic, static_cast<double>(weight));
+  publishMessage(weight_topic, static_cast<double>(weight), false);
 
   return weight;
 }
@@ -911,6 +934,7 @@ void measureDrink(float drinkVolume, int scaleCalibrationOffset)
   else
   {
     // Simulated measurement
+    long currentWeight = 0;
     while(currentWeight < drinkVolume - scaleCalibrationOffset)
     {
       delay(200);
@@ -994,22 +1018,22 @@ void pump(int pumpID, bool state)
      switch (pumpID) 
      {
        case 1:
-          publishMessage(pump1_topic, pumpStatus[pumpID], false);
+          publishMessage(pump1_topic, pumpStatus[pumpID] ? "ON" : "OFF", false);
           break;
        case 2:
-          publishMessage(pump2_topic, pumpStatus[pumpID], false);
+          publishMessage(pump2_topic, pumpStatus[pumpID] ? "ON" : "OFF", false);
           break;
        case 3:
-          publishMessage(pump3_topic, pumpStatus[pumpID], false);
+          publishMessage(pump3_topic, pumpStatus[pumpID] ? "ON" : "OFF", false);
           break;
        case 4:
-          publishMessage(pump4_topic, pumpStatus[pumpID], false);
+          publishMessage(pump4_topic, pumpStatus[pumpID] ? "ON" : "OFF", false);
           break;
        case 5:
-          publishMessage(pump5_topic, pumpStatus[pumpID], false);
+          publishMessage(pump5_topic, pumpStatus[pumpID] ? "ON" : "OFF", false);
           break;
        case 6:
-          publishMessage(pump6_topic, pumpStatus[pumpID], false);
+          publishMessage(pump6_topic, pumpStatus[pumpID] ? "ON" : "OFF", false);
           break;
        default:
          // statements
@@ -1032,7 +1056,7 @@ void motor(bool state)
       digitalWrite(motorPin, LOW);
     }
 
-    publishMessage(motor_topic, statusMotor, false); 
+    publishMessage(motor_topic, statusMotor ? "ON" : "OFF", false); 
 }
 
 void peltier(bool state)
@@ -1050,7 +1074,7 @@ void peltier(bool state)
       digitalWrite(peltierPin, LOW);
     }
 
-    publishMessage(peltier_topic, statusPeltier, false);
+    publishMessage(peltier_topic, statusPeltier ? "ON" : "OFF", false);
 }
 
 void fan(bool state)
@@ -1068,7 +1092,7 @@ void fan(bool state)
       digitalWrite(fanPin, LOW);
     }
 
-    publishMessage(fan_topic, statusFan, false);
+    publishMessage(fan_topic, statusFan ? "ON" : "OFF", false);
 }
 
 void blinkLED(int blinkDelay, int blinkNumber)
@@ -1160,7 +1184,7 @@ void calibrateScale(int calibrationWeight)
   }
   
   // Finished calibration
-  publishMessage(calibration_topic, scaleCalibrationFactor);
+  publishMessage(calibration_topic, scaleCalibrationFactor, false);
   consoleLog("Scale calibration finished", 1);
 
   Serial.println("      ");
@@ -1262,7 +1286,7 @@ void dispense(int drink, float amount)
 {
      // Update daily drink amount
      dailyAmount = dailyAmount + amount;
-     publishMessage(amount_topic, dailyAmount);
+     publishMessage(dailyamount_topic, dailyAmount, false);
 
      switch (drink) 
      {
@@ -1329,7 +1353,6 @@ void handleCommands(String message)
   if (message == "servo off") 
   {
     consoleLog("Command received: Servo Off", 1);
-    servo.detach();
   }
 }
 
@@ -1348,7 +1371,7 @@ void handleParameters(const String& jsonPayload)
     }
 
     // Check if all expected parameters exist before assigning values
-    if (!doc.containsKey("glassWeigth"))
+    if (!doc.containsKey("glassWeight"))
     {
         consoleLog("Missing one or more required parameters", 2);
         return;
@@ -1440,7 +1463,7 @@ void handleDrinks(const String& jsonPayload)
   }
 
   // Start dispensing drink with the received recipe
-  consoleLog("Starting mixing drink: " + name, 1);
+  consoleLog(String("Starting mixing drink: ") + name, 1);
 
   if(head){stepper.runToNewPosition(headMovement);}       // Lower stirring head
   if(pump1 != 0){dispense(1, pump1);}                     // Dispense with pump1
