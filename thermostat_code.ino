@@ -33,7 +33,7 @@
 
 // Device-specific settings
 const char* deviceName = "thermostat";
-const char* currentSwVersion = "1.3.4";
+const char* currentSwVersion = "1.3.5";
 const char* deviceModel = "ESP32-NodeMCU";
 const char* deviceManufacturer = "BTM Engineering";
 String configurationUrl = "";
@@ -66,16 +66,18 @@ int previousAngle;                                  // Previous angle setting
 int servoLastAngle = 90;                            // Last servo angle before reboot
 
 // Refresh loop parameters
-int measurementInterval = 60;                       // Measurement loop length [s]
+int refreshRate = 60;                       // Measurement loop length [s]
 int refreshLoop = 1;                                // Number of refresh loops
 int connectRate = 300;                              // Connection check loop length [s]
+bool manualTrigger = false;  
 unsigned long previousMillisMain = 0;
 unsigned long previousMillisMQTT = 0;               // MQTT reconnect timing
 unsigned long previousMillisWiFi = 0;               // WiFi reconnect timing
 unsigned long mqttReconnectInterval = 5000;   // Check MQTT every 5 seconds
 unsigned long wifiReconnectInterval = 5000;   // Check WiFi every 5 seconds 
 unsigned long wifiRetryMaxInterval = 30000;    // 30 seconds max
-unsigned long mqttRetryMaxInterval = 60000;    // 60 seconds max   
+unsigned long mqttRetryMaxInterval = 60000;    // 60 seconds max 
+
 
 // Temperature control parameters
 int onTemperature = 22;                             // Temperature setting for heating on state
@@ -204,7 +206,7 @@ String ontemperature_topic =                String("home/") + deviceName + Strin
 String offtemperature_topic =               String("home/") + deviceName + String("/parameters/offtemperature");
 String tempcontrolrange_topic =             String("home/") + deviceName + String("/parameters/tempcontrolrange");
 String safetytemp_topic =                   String("home/") + deviceName + String("/parameters/safetytemp");
-String measurementInterval_topic =          String("home/") + deviceName + String("/parameters/measurementInterval");
+String refreshRate_topic =          String("home/") + deviceName + String("/parameters/refreshRate");
 String timeoffset_topic =                   String("home/") + deviceName + String("/parameters/timeoffset");
 String tempoffset_topic =                   String("home/") + deviceName + String("/parameters/tempoffset");
 
@@ -668,7 +670,7 @@ void sendDiscoveries()
   publishMQTTDiscovery("Off Temperature", "sensor", "mdi:snowflake-alert", "°C", "temperature", "measurement", "diagnostic", offtemperature_topic);
   publishMQTTDiscovery("Control Range", "sensor", "mdi:car-cruise-control", "", "", "", "diagnostic", tempcontrolrange_topic);
   publishMQTTDiscovery("Safety Temperature", "sensor", "mdi:seatbelt", "°C", "temperature", "measurement", "diagnostic", safetytemp_topic);
-  publishMQTTDiscovery("Refresh Rate", "sensor", "mdi:refresh", "", "", "", "diagnostic", measurementInterval_topic);
+  publishMQTTDiscovery("Refresh Rate", "sensor", "mdi:refresh", "", "", "", "diagnostic", refreshRate_topic);
   publishMQTTDiscovery("Time Offset", "sensor", "mdi:clock-time-eight-outline", "", "", "", "diagnostic", timeoffset_topic);
   publishMQTTDiscovery("Temperature Offset", "sensor", "mdi:thermometer-chevron-up", "", "", "", "diagnostic", tempoffset_topic);
   // Climate
@@ -682,7 +684,7 @@ void sendParameters()
   publishMessage(offtemperature_topic, offTemperature, true);
   publishMessage(tempcontrolrange_topic, tempControlRange, true);
   publishMessage(safetytemp_topic, safetyTemp, true);
-  publishMessage(measurementInterval_topic, measurementInterval, true);
+  publishMessage(refreshRate_topic, refreshRate, true);
   publishMessage(timeoffset_topic, timeOffset, true);
   publishMessage(tempoffset_topic, tempCalibration, true);
 }
@@ -719,10 +721,31 @@ void setup()
   servo.write(servoLastAngle);
   servo.attach(SERVO_PIN);
 
+  // Initiate the LCD:
+  Serial.println("Initializing LCD display");
+  lcd.init();
+  lcd.createChar(1, termometru);
+  lcd.createChar(2, picatura);
+  lcd.createChar(3, wifiON);
+  lcd.createChar(4, wifiOFF);
+  lcd.createChar(5, heatOn);
+  lcd.createChar(6, heatOff);
+  lcd.backlight();
+
+  // Display current firmware version
+  lcd.clear();
+  lcd.setCursor(0,0);
+  lcd.print("FIRMWARE VERSION");
+  lcd.setCursor(5,1);
+  lcd.print(currentSwVersion);
+
+  delay(3000);
+
   // Set MQTT server and callback
   client.setServer(mqtt_server, mqtt_port);
   client.setCallback(mqttCallback);
   client.setBufferSize(4096);
+  client.setKeepAlive(120);
   connectMQTT();
 
   // Announce availability
@@ -759,17 +782,6 @@ void setup()
   publishMessage(firmware_topic, currentSwVersion, true);
   publishMessage(log_info_topic, "Starting main loop", false);
   publishMessage(ip_topic, configurationUrl, true);
-
-  // Initiate the LCD:
-  Serial.println("Initializing LCD display");
-  lcd.init();
-  lcd.createChar(1, termometru);
-  lcd.createChar(2, picatura);
-  lcd.createChar(3, wifiON);
-  lcd.createChar(4, wifiOFF);
-  lcd.createChar(5, heatOn);
-  lcd.createChar(6, heatOff);
-  lcd.backlight();
 
   // Print connection status to LCD
   Serial.println("Printing boot status to LCD display");
@@ -816,13 +828,6 @@ void setup()
 
   // Load mode
   autoMode = EEPROM.read(MODE_ADDRESS);
-
-  // Display current firmware version
-  lcd.clear();
-  lcd.setCursor(0,0);
-  lcd.print("FIRMWARE VERSION");
-  lcd.setCursor(5,1);
-  lcd.print(currentSwVersion);
                
   delay(3000);
 
@@ -879,13 +884,14 @@ void loop()
       }
   }
 
-  if (currentMillis - previousMillisMain >= measurementInterval * 1000) 
+  if (manualTrigger || (currentMillis - previousMillisMain >= refreshRate * 1000)) 
   { 
     previousMillisMain = currentMillis;
+    manualTrigger = false;
 
     // Uptime calculation
     refreshLoop++;
-    upTime = (refreshLoop * measurementInterval) / 60; // Return uptime in minutes
+    upTime = (refreshLoop * refreshRate) / 60; // Return uptime in minutes
     Serial.print("Loop Number: ");
     Serial.println(refreshLoop);
 
@@ -1057,8 +1063,8 @@ void servoMove (int turnAngle)
   previousAngle = turnAngle;
 
   // Detach servo after movement to prevent noise
-  delay(500);  // Allow it to stabilize before detaching
-  servo.detach();
+  //delay(500);  // Allow it to stabilize before detaching
+  //servo.detach();
 }
 
 // Temperature control logic
@@ -1221,7 +1227,7 @@ void printLocalTime()
 void triggerLoop()
 {
   // Trigger next measurement loop
-  previousMillisMain = millis() - (measurementInterval * 1000);
+  manualTrigger = true;
 }
 
 // Handle target temperature received via MQTT
@@ -1373,7 +1379,7 @@ void handleParameters(const String& jsonPayload)
         !doc.containsKey("offTemperature") ||
         !doc.containsKey("tempControlRange") ||
         !doc.containsKey("safetyTemp") ||
-        !doc.containsKey("measurementInterval") ||
+        !doc.containsKey("refreshRate") ||
         !doc.containsKey("timeOffset") ||
         !doc.containsKey("tempOffset")) 
     {
@@ -1386,7 +1392,7 @@ void handleParameters(const String& jsonPayload)
     offTemperature = doc["offTemperature"].as<int>();
     tempControlRange = doc["tempControlRange"].as<float>();
     safetyTemp = doc["safetyTemp"].as<int>();
-    measurementInterval = doc["measurementInterval"].as<int>();
+    refreshRate = doc["refreshRate"].as<int>();
     timeOffset = doc["timeOffset"].as<int>();
     tempCalibration = doc["tempOffset"].as<float>();
 
@@ -1396,7 +1402,7 @@ void handleParameters(const String& jsonPayload)
     Serial.print("    offTemperature: "); Serial.println(offTemperature);
     Serial.print("    tempControlRange: "); Serial.println(tempControlRange);
     Serial.print("    safetyTemp: "); Serial.println(safetyTemp);
-    Serial.print("    measurementInterval: "); Serial.println(measurementInterval);
+    Serial.print("    refreshRate: "); Serial.println(refreshRate);
     Serial.print("    timeOffset: "); Serial.println(timeOffset);
     Serial.print("    tempOffset: "); Serial.println(tempCalibration);
 
