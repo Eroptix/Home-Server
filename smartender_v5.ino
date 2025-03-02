@@ -29,7 +29,7 @@
 
 // Device-specific settings
 const char* deviceName = "smartender";
-const char* currentSwVersion = "1.0.4";
+const char* currentSwVersion = "1.0.6";
 const char* deviceModel = "ESP32-NodeMCU";
 const char* deviceManufacturer = "BTM Engineering";
 String configurationUrl = "";
@@ -1466,10 +1466,6 @@ void handleDrinks(const String& jsonPayload)
   consoleLog(String("Starting mixing drink: ") + name, 1);
 
   if(head){stepper.runToNewPosition(headMovement);}       // Lower stirring head
-  if(pump1 != 0){dispense(1, pump1);}                     // Dispense with pump1
-  delay(1000);
-  if(pump2 != 0){dispense(2, pump2);}                     // Dispense with pump2
-  delay(1000);
   if(pump3 != 0){dispense(3, pump3);}                     // Dispense with pump3
   delay(1000);
   if(pump4 != 0){dispense(4, pump4);}                     // Dispense with pump4
@@ -1478,8 +1474,14 @@ void handleDrinks(const String& jsonPayload)
   delay(1000);
   if(pump6 != 0){dispense(6, pump6);}                     // Dispense with pump6
   delay(1000);
+  if(pump1 != 0){dispense(1, pump1);}                     // Dispense with pump1
+  delay(1000);
+  if(pump2 != 0){dispense(2, pump2);}                     // Dispense with pump2
+  delay(1000);
   if(stirring != 0){motorStirring(stirring);}             // Stir the finished drink
   if(head){stepper.runToNewPosition(0);}                  // Raise stirring head
 
   consoleLog("Drink finished", 1);
+
+  waitForRemove();
 }
