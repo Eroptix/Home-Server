@@ -33,7 +33,7 @@
 
 // Device-specific settings
 const char* deviceName = "thermostat";
-const char* currentSwVersion = "1.3.7";
+const char* currentSwVersion = "1.4.1";
 const char* deviceModel = "ESP32-NodeMCU";
 const char* deviceManufacturer = "BTM Engineering";
 String configurationUrl = "";
@@ -1232,9 +1232,9 @@ void lcdCommand(String message)
 }
 
 // Display current time and date LCD screen
-void lcdDate(String message)
+void lcdDate()
 {
-  const char* daysOfWeek[] = {"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"};
+  const char* daysOfWeek[] = {"Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"};
   
   // Get time information
   int timeDay = rtc.getDayofWeek() - 1;  // Convert to 0-based index
@@ -1253,7 +1253,7 @@ void lcdDate(String message)
   snprintf(timeStr, sizeof(timeStr), "%02d:%02d", timeStamp, timeMinutes);
 
   char tempStr[10];  
-  snprintf(tempStr, sizeof(tempStr), "D%02d H%02d T%02d", timeDay, timeStamp, tempSchedule[timeDay, timeStamp]);
+  snprintf(tempStr, sizeof(tempStr), "D%01d H%02d T%02d", timeDay, timeStamp, tempSchedule[timeDay, timeStamp]);
 
   // Display on LCD
   lcd.clear();
@@ -1261,8 +1261,8 @@ void lcdDate(String message)
   lcd.print(dateStr);
   lcd.setCursor(0, 1);
   lcd.print(timeStr);
-  lcd.setCursor(0, 1);
-  lcd.print(timeStr);
+  lcd.setCursor(6, 1);
+  lcd.print(tempStr);
   delay(5000);
 }
 
@@ -1400,6 +1400,12 @@ void handleCommand(String message)
     Serial.println("Command received: LCD Display OFF");
     lcdCommand("lcd off");
     requestTemperatureSchedule();
+  }
+  if (message == "display date") 
+  {
+    Serial.println("Command received: Display date");
+    lcdCommand("display");
+    lcdDate();
   }
 }
 
