@@ -239,6 +239,9 @@ void mqttCallback(char* topic, byte* payload, unsigned int length)
   Serial.print(": ");
   Serial.println(message);
 
+  // Turn off sleep mode
+  sleepModeOFF();
+
   // Handle commands
   if (String(topic) == ota_response_topic) 
   {
@@ -780,6 +783,13 @@ void loop(void)
           mqttReconnectInterval = min(mqttReconnectInterval * 2, mqttRetryMaxInterval); // Exponential backoff
       }
   }
+
+  // Check sleep time
+  if(currentMillis - activityMillis > sleepTime)
+  {
+    // Sleep mode activated
+    sleepModeON();
+  }
   
   client.loop();
 
@@ -800,13 +810,6 @@ void loop(void)
       else 
       {
         consoleLog("Ready to serve drinks", 1);
-      }
-      
-      // Check sleep time
-      if(currentMillis - activityMillis > sleepTime)
-      {
-        // Sleep mode activated
-        sleepModeON();
       }
 
       // Refresh dashboard
@@ -1463,21 +1466,21 @@ void handleDrinks(const String& jsonPayload)
   }
 
   // Start dispensing drink with the received recipe
-  consoleLog(String("Starting mixing drink: ") + name, 1);
+  consoleLog(String("Mixing drink: ") + name, 1);
 
   if(head){stepper.runToNewPosition(headMovement);}       // Lower stirring head
   if(pump3 != 0){dispense(3, pump3);}                     // Dispense with pump3
-  delay(1000);
+  delay(200);
   if(pump4 != 0){dispense(4, pump4);}                     // Dispense with pump4
-  delay(1000);
+  delay(200);
   if(pump5 != 0){dispense(5, pump5);}                     // Dispense with pump5
-  delay(1000);
+  delay(200);
   if(pump6 != 0){dispense(6, pump6);}                     // Dispense with pump6
-  delay(1000);
+  delay(200);
   if(pump1 != 0){dispense(1, pump1);}                     // Dispense with pump1
-  delay(1000);
+  delay(200);
   if(pump2 != 0){dispense(2, pump2);}                     // Dispense with pump2
-  delay(1000);
+  delay(200);
   if(stirring != 0){motorStirring(stirring);}             // Stir the finished drink
   if(head){stepper.runToNewPosition(0);}                  // Raise stirring head
 

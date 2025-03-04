@@ -66,17 +66,17 @@ int previousAngle;                                  // Previous angle setting
 int servoLastAngle = 90;                            // Last servo angle before reboot
 
 // Refresh loop parameters
-int refreshRate = 60;                       // Measurement loop length [s]
+int refreshRate = 60;                               // Measurement loop length [s]
 int refreshLoop = 1;                                // Number of refresh loops
 int connectRate = 300;                              // Connection check loop length [s]
 bool manualTrigger = false;  
 unsigned long previousMillisMain = 0;
 unsigned long previousMillisMQTT = 0;               // MQTT reconnect timing
 unsigned long previousMillisWiFi = 0;               // WiFi reconnect timing
-unsigned long mqttReconnectInterval = 5000;   // Check MQTT every 5 seconds
-unsigned long wifiReconnectInterval = 5000;   // Check WiFi every 5 seconds 
-unsigned long wifiRetryMaxInterval = 30000;    // 30 seconds max
-unsigned long mqttRetryMaxInterval = 60000;    // 60 seconds max 
+unsigned long mqttReconnectInterval = 5000;         // Check MQTT every 5 seconds
+unsigned long wifiReconnectInterval = 5000;         // Check WiFi every 5 seconds 
+unsigned long wifiRetryMaxInterval = 30000;         // 30 seconds max
+unsigned long mqttRetryMaxInterval = 60000;         // 60 seconds max 
 
 
 // Temperature control parameters
