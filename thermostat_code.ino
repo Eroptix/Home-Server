@@ -90,7 +90,8 @@ bool autoMode = false;                              // Auto mode on/off state bo
 bool lcdMode = true;                                // LCD on/off state bool
 bool wifiStatus = false;                            // WiFi status indicator
 long wifiStrength;                                  // WiFi strength value
-String mode = "heat";                               // Active temperature control mode (auto, heat, cool, off) 
+String mode = "heat";                               // Active temperature control mode (auto, heat, cool, off)
+int coolTemperature = 14; 
 
 // Default temperature schedule
 //[01, 02, 03, 04, 05, 06, 07, 08, 09, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24]
@@ -654,28 +655,49 @@ void sendDiscoveries()
 {
 	// Diagnostics
   publishMQTTDiscovery("Up Time", "sensor","mdi:clock", "h", "duration", "total_increasing", "diagnostic", uptime_topic);
+  delay(100);
 	publishMQTTDiscovery("OTA Status", "sensor", "mdi:update", "", "", "", "diagnostic", ota_status_topic);
+  delay(100);
 	publishMQTTDiscovery("Firmware Version", "sensor", "mdi:application-outline", "", "", "", "diagnostic", firmware_topic);
+  delay(100);
 	publishMQTTDiscovery("Error", "sensor", "mdi:alert-circle-outline", "", "", "", "diagnostic", log_error_topic);
+  delay(100);
 	publishMQTTDiscovery("Warning", "sensor", "mdi:shield-alert-outline", "", "", "", "diagnostic", log_warning_topic);
+  delay(100);
 	publishMQTTDiscovery("Info", "sensor", "mdi:information-outline", "", "", "", "diagnostic", log_info_topic);
+  delay(100);
 	publishMQTTDiscovery("IP Address", "sensor", "mdi:ip-network-outline", "", "", "", "diagnostic", ip_topic);
+  delay(100);
   publishMQTTDiscovery("WiFi Strength", "sensor", "mdi-rss", "", "", "", "diagnostic", wifi_strength_topic);
+  delay(100);
   // Sensors
   publishMQTTDiscovery("Temperature", "sensor", "mdi:home-thermometer", "°C", "temperature", "measurement", "", temperature_topic);
+  delay(100);
   publishMQTTDiscovery("Pressure", "sensor", "mdi:gauge", "hPa", "pressure", "measurement", "", pressure_topic);
+  delay(100);
   publishMQTTDiscovery("Humidity", "sensor", "mdi:water-percent", "%", "humidity", "measurement", "", humidity_topic);
+  delay(100);
   publishMQTTDiscovery("Temp Goal", "sensor", "mdi:target", "°C", "temperature", "measurement", "", tempgoal_topic);
+  delay(100);
   publishMQTTDiscovery("Mode", "sensor", "mdi:auto-mode", "", "", "", "", mode_topic);
+  delay(100);
   publishMQTTDiscovery("Heating", "sensor", "mdi:heat-wave", "", "", "", "", heating_topic);
+  delay(100);
   // Parameters
   publishMQTTDiscovery("On Temperature", "sensor", "mdi:fire", "°C", "temperature", "measurement", "diagnostic", ontemperature_topic);
+  delay(100);
   publishMQTTDiscovery("Off Temperature", "sensor", "mdi:snowflake-alert", "°C", "temperature", "measurement", "diagnostic", offtemperature_topic);
+  delay(100);
   publishMQTTDiscovery("Control Range", "sensor", "mdi:car-cruise-control", "", "", "", "diagnostic", tempcontrolrange_topic);
+  delay(100);
   publishMQTTDiscovery("Safety Temperature", "sensor", "mdi:seatbelt", "°C", "temperature", "measurement", "diagnostic", safetytemp_topic);
+  delay(100);
   publishMQTTDiscovery("Refresh Rate", "sensor", "mdi:refresh", "", "", "", "diagnostic", refreshRate_topic);
+  delay(100);
   publishMQTTDiscovery("Time Offset", "sensor", "mdi:clock-time-eight-outline", "", "", "", "diagnostic", timeoffset_topic);
+  delay(100);
   publishMQTTDiscovery("Temperature Offset", "sensor", "mdi:thermometer-chevron-up", "", "", "", "diagnostic", tempoffset_topic);
+  delay(100);
   // Climate
   publishMQTTClimateDiscovery("thermostat", "climate"); 
 }
@@ -927,10 +949,18 @@ void loop()
       Serial.println("--------------------------------------");  
       Serial.println("MQTT connection: Not Connected");
 
-      // Set servo if automatic mode on
+      // Check current mode
       if (mode == "auto")
       {
         tempGoal = tempSchedule[timeDay][timeStamp];
+      }
+      else if (mode == "cool")
+      {
+        tempGoal = coolTemperature;
+      }
+      else if (mode == "off")
+      {
+
       }
 
       // In safe mode -> set temperature to latest tempGoal
@@ -958,10 +988,18 @@ void loop()
       publishMessage(tempgoal_topic, tempGoal, false);
       publishMessage(mode_topic, mode, false);   
     
-      // Check for active mode
+      // Check current mode
       if (mode == "auto")
       {
         tempGoal = tempSchedule[timeDay][timeStamp];
+      }
+      else if (mode == "cool")
+      {
+        tempGoal = coolTemperature;
+      }
+      else if (mode == "off")
+      {
+
       }
 
       Serial.print("Temperature Goal: ");
@@ -1337,6 +1375,21 @@ void handleMode(String setMode)
   {
     autoMode = false;
     mode = "cool";
+    Serial.print("    [RPC] Mode: ");
+    Serial.println(autoMode);
+
+    // Save mode setup to EEPROM
+    EEPROM.write(MODE_ADDRESS, autoMode);
+    EEPROM.commit();
+
+    // Just an response example
+    publishMessage(mode_topic, mode, false);
+    publishMessage(climate_mode_state_topic, mode, false);
+  }
+  if(setMode == "off")
+  {
+    autoMode = false;
+    mode = "off";
     Serial.print("    [RPC] Mode: ");
     Serial.println(autoMode);
 

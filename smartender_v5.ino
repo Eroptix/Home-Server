@@ -21,6 +21,7 @@
 #include <Update.h>
 #include <ArduinoJson.h>
 #include <PubSubClient.h>
+#include <RunningAverage.h>
 
 #define WIFI_SSID "UPC8F21BEF"
 #define WIFI_PASS "k7pp3aexkmQh"
@@ -143,6 +144,10 @@ int dutyCycleLED = 250;
 const int sleepDutyCycleLED = 10;
 const int operationDutyCycleLED = 250;
 int operationFreq = 5000;
+
+// Running average filter
+int MOVING_AVG_SIZE = 3;
+RunningAverage weightFilter(MOVING_AVG_SIZE);
 
 /************************** HomeAssistant Settings ***********************************/
 
@@ -557,49 +562,49 @@ void sendDiscoveries()
 {
   // Diagnostics
   publishMQTTDiscovery("Up Time", "sensor","mdi:clock", "h", "duration", "total_increasing", "diagnostic", uptime_topic);
-  delay(200);
+  delay(100);
 	publishMQTTDiscovery("OTA Status", "sensor", "mdi:update", "", "", "", "diagnostic", ota_status_topic);
-  delay(200);
+  delay(100);
 	publishMQTTDiscovery("Firmware Version", "sensor", "mdi:application-outline", "", "", "", "diagnostic", firmware_topic);
-  delay(200);
+  delay(100);
 	publishMQTTDiscovery("Error", "sensor", "mdi:alert-circle-outline", "", "", "", "diagnostic", log_error_topic);
-  delay(200);
+  delay(100);
 	publishMQTTDiscovery("Warning", "sensor", "mdi:shield-alert-outline", "", "", "", "diagnostic", log_warning_topic);
-  delay(200);
+  delay(100);
 	publishMQTTDiscovery("Info", "sensor", "mdi:information-outline", "", "", "", "diagnostic", log_info_topic);
-  delay(200);
+  delay(100);
 	publishMQTTDiscovery("IP Address", "sensor", "mdi:ip-network-outline", "", "", "", "diagnostic", ip_topic);
-  delay(200);
+  delay(100);
   publishMQTTDiscovery("WiFi Strength", "sensor", "mdi-rss", "", "", "", "diagnostic", wifi_strength_topic);
-  delay(200);
+  delay(100);
   // Sensors
   publishMQTTDiscovery("Weight", "sensor", "mdi:weight", "g", "weight", "measurement", "", weight_topic);
-  delay(200);
+  delay(100);
   publishMQTTDiscovery("Daily Amount", "sensor", "mdi:cup", "L", "volume", "measurement", "", dailyamount_topic);
-  delay(200);
+  delay(100);
   publishMQTTDiscovery("Pump 1", "binary_sensor", "mdi:pump", "", "moving", "", "", pump1_topic);
-  delay(200);
+  delay(100);
   publishMQTTDiscovery("Pump 2", "binary_sensor", "mdi:pump", "", "moving", "", "", pump2_topic);
-  delay(200);
+  delay(100);
   publishMQTTDiscovery("Pump 3", "binary_sensor", "mdi:pump", "", "moving", "", "", pump3_topic);
-  delay(200);
+  delay(100);
   publishMQTTDiscovery("Pump 4", "binary_sensor", "mdi:pump", "", "moving", "", "", pump4_topic);
-  delay(200);
+  delay(100);
   publishMQTTDiscovery("Pump 5", "binary_sensor", "mdi:pump", "", "moving", "", "", pump5_topic);
-  delay(200);
+  delay(100);
   publishMQTTDiscovery("Pump 6", "binary_sensor", "mdi:pump", "", "moving", "", "", pump6_topic);
-  delay(200);
+  delay(100);
   publishMQTTDiscovery("Fan", "binary_sensor", "mdi:fan", "", "running", "", "", fan_topic);
-  delay(200);
+  delay(100);
   publishMQTTDiscovery("Motor", "binary_sensor", "mdi:rotate-360", "", "running", "", "", motor_topic);
-  delay(200);
+  delay(100);
   publishMQTTDiscovery("Peltier", "binary_sensor", "mdi:snowflake-alert", "", "running", "", "", peltier_topic);
-  delay(200);
+  delay(100);
   // Parameters
   publishMQTTDiscovery("Glass Weight", "sensor", "mdi:glass-cocktail", "g", "weight", "measurement", "diagnostic", glassweight_topic);
-  delay(200);
+  delay(100);
   publishMQTTDiscovery("Calibration", "sensor", "mdi:calculator-variant-outline", "", "", "measurement", "diagnostic", calibration_topic);
-  delay(200);
+  delay(100);
 }
 
 // Send back received parameters to the server
@@ -663,6 +668,9 @@ void setup(void)
   // Set the maximum speed and acceleration:
   stepper.setMaxSpeed(headMaxSpeed);
   stepper.setAcceleration(headAcceleration);
+
+  // Initialize moving average filter
+  weightFilter.clear();
 
   // Connect to WiFi
   wifiStatus = connectWifi();
@@ -898,6 +906,9 @@ long readWeightSensor()
   // If using double load cells
   weight = weight * 2;
 
+  weightFilter.addValue(weight); // Add new value to filter
+  long filteredWeight = weightFilter.getAverage(); // Get smoothed value
+
   //Serial.print("Load cell: ");
   //Serial.print(weight);
   //Serial.println("g");
@@ -917,21 +928,21 @@ void measureDrink(float drinkVolume, int scaleCalibrationOffset)
     
     // Zero out scale
     scale.tare();
+
+    unsigned long startTime = millis();
   
     // Run until selected volume
-    int i = 0;
     while(currentWeight < drinkVolume - scaleCalibrationOffset)
     {
-      i = i + measureInterval;
       delay(measureInterval);
       currentWeight = readWeightSensor();
   
-      // Check for error
-      if(i > maxMeasureTime)
-      {
+    // Timeout check
+    if (millis() - startTime > maxMeasureTime)
+    {
         consoleLog("Maximum measurement time reached", 3);
         break;
-      }
+    }
     }
   }
   else
@@ -1197,7 +1208,47 @@ void calibrateScale(int calibrationWeight)
 
 void adjustScaleCalibration(int calibrationWeight)
 {
+  long currentWeight = readWeightSensor();
+  int iterationNumber = 0;
+
+  Serial.println(currentWeight); 
+
+  // Start calibration
+  while(abs(currentWeight - calibrationWeight)>2)
+  {
+    // Adjust scale factor
+    scaleCalibrationFactor = scaleCalibrationFactor + (currentWeight - calibrationWeight)*0.05;
+    
+    Serial.print("  Calibration factor: ");
+    Serial.print(scaleCalibrationFactor);
+    
+    scale.set_scale(scaleCalibrationFactor);
+
+    delay(300);
+
+    // Read current weight after calibration
+    currentWeight = readWeightSensor();
+    
+    Serial.print("  Current weight: ");
+    Serial.println(currentWeight);
+    
+    // Check if we are stuck
+    iterationNumber++;
+    if(iterationNumber > 100)
+    {
+      blinkLED(100, 10);
+      consoleLog("Failed to calibrate weight sensors", 3);
+      break;
+    }
+  }
   
+  // Finished calibration
+  publishMessage(calibration_topic, scaleCalibrationFactor, false);
+  consoleLog("Scale calibration finished", 1);
+
+  Serial.println("      ");
+  Serial.println("      Finished calibration");
+  Serial.println("---------------------------------");
 }
 
 void sleepModeON()
