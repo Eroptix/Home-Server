@@ -188,7 +188,7 @@ String fan_topic =                          String("home/") + deviceName + Strin
 String peltier_topic =                      String("home/") + deviceName + String("/peltier");
 
 // Parameters
-String button_topic =                       String("home/") + deviceName + String("/parameters/button");
+String button_topic =                       String("home/") + deviceName + String("/button");
 String drink_topic =                        String("home/") + deviceName + String("/drink");
 String glassweight_topic =                  String("home/") + deviceName + String("/parameters/glassweight");
 String calibration_topic =                  String("home/") + deviceName + String("/calibration");
@@ -1302,37 +1302,49 @@ void sleepModeOFF()
 
 void checkPushButton() 
 {
-    static unsigned long pressedTime = 0; // Time when the button was pressed
-    static bool isLongDetected = false;  // Tracks if a long press was detected
-    static int lastState = HIGH;         // Last button state
-    const unsigned long debounceDelay = 50; // Debounce delay in ms
+    static unsigned long pressedTime = 0; 
+    static bool isLongDetected = false;
+    static int lastState = HIGH;
+    
+    const unsigned long debounceDelay = 50;  // Debounce time
+    const unsigned long longPressTime = 1000; // Define long press duration
 
     int currentState = digitalRead(buttonPin);
+    unsigned long now = millis();
 
-    if (lastState == HIGH && currentState == LOW) { // Button pressed
-        unsigned long now = millis();
+    // Button press detected
+    if (lastState == HIGH && currentState == LOW) {  
         if (now - pressedTime > debounceDelay) { // Debounce check
             pressedTime = now;
             isLongDetected = false;
         }
-    } 
-    else if (lastState == LOW && currentState == HIGH) { // Button released
-        unsigned long pressDuration = millis() - pressedTime;
+    }
 
-        if (pressDuration > longPressTime && !isLongDetected) {
-            Serial.println("  --- Button press detected ---");
-            
-            // Sleep mode off
-            sleepModeOFF();
-            
-            // Publish manual drink trigger
-            //publishMessage(button_topic, "true", false);
+    // Button held down (long press detected)
+    if (currentState == LOW && (now - pressedTime >= longPressTime) && !isLongDetected) {
+        Serial.println("  --- Long button press detected ---");
 
-            isLongDetected = true;
+        // Sleep mode off
+        sleepModeOFF();
+
+        // Publish manual drink trigger
+        publishMessage(button_topic, "drink", false);
+
+        isLongDetected = true;  // Prevents multiple triggers
+    }
+
+    // Button release detection (short press)
+    if (lastState == LOW && currentState == HIGH) {  
+        unsigned long pressDuration = now - pressedTime;
+
+        if (pressDuration < longPressTime && pressDuration > debounceDelay) {
+            Serial.println("  --- Short button press detected ---");
+
+            // Handle short press action (if needed)
+            //publishMessage(button_topic, "short_press", false);
         }
     }
 
-    // Update last state
     lastState = currentState;
 }
 

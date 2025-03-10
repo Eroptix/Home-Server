@@ -530,8 +530,8 @@ String removeSpaces(String input) {
   return output;
 }
 
-// Create default discovery payload
-void publishMQTTDiscovery(String name, String deviceType,	String icon, String unitOfMeasurement, String deviceClass, String stateClass, String entityCategory, String stateTopic) 
+// Create sensor discovery payload
+void publishMQTTSensorDiscovery(String name, String deviceType,	String icon, String unitOfMeasurement, String deviceClass, String stateClass, String entityCategory, String stateTopic, int displayPrecision) 
 {
     // Construct IDs
     String uniqueID = String(deviceName) + "-" + removeSpaces(name);
@@ -565,10 +565,14 @@ void publishMQTTDiscovery(String name, String deviceType,	String icon, String un
     {
       doc["state_class"] = stateClass; 
     }
+    if(stateClass != "")
+    {
+      doc["suggested_display_precision"] = displayPrecision; 
+    }
     doc["availability_topic"] = availability_topic;
     doc["payload_available"] = "connected";
     doc["payload_not_available"] = "connection lost";
-
+    
     // Add the device object
     JsonObject device = doc.createNestedObject("device");
     JsonArray identifiers = device.createNestedArray("identifiers");
@@ -654,49 +658,50 @@ void publishMQTTClimateDiscovery(String name, String deviceType)
 void sendDiscoveries()
 {
 	// Diagnostics
-  publishMQTTDiscovery("Up Time", "sensor","mdi:clock", "h", "duration", "total_increasing", "diagnostic", uptime_topic);
+  // name, deviceType, icon, unitOfMeasurement, deviceClass, stateClass, entityCategory, stateTopic, displayPrecision
+  publishMQTTSensorDiscovery("Up Time", "sensor","mdi:clock", "h", "duration", "total_increasing", "diagnostic", uptime_topic, "");
   delay(100);
-	publishMQTTDiscovery("OTA Status", "sensor", "mdi:update", "", "", "", "diagnostic", ota_status_topic);
+	publishMQTTSensorDiscovery("OTA Status", "sensor", "mdi:update", "", "", "", "diagnostic", ota_status_topic, "");
   delay(100);
-	publishMQTTDiscovery("Firmware Version", "sensor", "mdi:application-outline", "", "", "", "diagnostic", firmware_topic);
+	publishMQTTSensorDiscovery("Firmware Version", "sensor", "mdi:application-outline", "", "", "", "diagnostic", firmware_topic, "");
   delay(100);
-	publishMQTTDiscovery("Error", "sensor", "mdi:alert-circle-outline", "", "", "", "diagnostic", log_error_topic);
+	publishMQTTSensorDiscovery("Error", "sensor", "mdi:alert-circle-outline", "", "", "", "diagnostic", log_error_topic, "");
   delay(100);
-	publishMQTTDiscovery("Warning", "sensor", "mdi:shield-alert-outline", "", "", "", "diagnostic", log_warning_topic);
+	publishMQTTSensorDiscovery("Warning", "sensor", "mdi:shield-alert-outline", "", "", "", "diagnostic", log_warning_topic, "");
   delay(100);
-	publishMQTTDiscovery("Info", "sensor", "mdi:information-outline", "", "", "", "diagnostic", log_info_topic);
+	publishMQTTSensorDiscovery("Info", "sensor", "mdi:information-outline", "", "", "", "diagnostic", log_info_topic, "");
   delay(100);
-	publishMQTTDiscovery("IP Address", "sensor", "mdi:ip-network-outline", "", "", "", "diagnostic", ip_topic);
+	publishMQTTSensorDiscovery("IP Address", "sensor", "mdi:ip-network-outline", "", "", "", "diagnostic", ip_topic, "");
   delay(100);
-  publishMQTTDiscovery("WiFi Strength", "sensor", "mdi-rss", "", "", "", "diagnostic", wifi_strength_topic);
+  publishMQTTSensorDiscovery("WiFi Strength", "sensor", "mdi-rss", "", "", "", "diagnostic", wifi_strength_topic, "");
   delay(100);
   // Sensors
-  publishMQTTDiscovery("Temperature", "sensor", "mdi:home-thermometer", "°C", "temperature", "measurement", "", temperature_topic);
+  publishMQTTSensorDiscovery("Temperature", "sensor", "mdi:home-thermometer", "°C", "temperature", "measurement", "", temperature_topic, 2);
   delay(100);
-  publishMQTTDiscovery("Pressure", "sensor", "mdi:gauge", "hPa", "pressure", "measurement", "", pressure_topic);
+  publishMQTTSensorDiscovery("Pressure", "sensor", "mdi:gauge", "hPa", "pressure", "measurement", "", pressure_topic, 0);
   delay(100);
-  publishMQTTDiscovery("Humidity", "sensor", "mdi:water-percent", "%", "humidity", "measurement", "", humidity_topic);
+  publishMQTTSensorDiscovery("Humidity", "sensor", "mdi:water-percent", "%", "humidity", "measurement", "", humidity_topic, 2);
   delay(100);
-  publishMQTTDiscovery("Temp Goal", "sensor", "mdi:target", "°C", "temperature", "measurement", "", tempgoal_topic);
+  publishMQTTSensorDiscovery("Temp Goal", "sensor", "mdi:target", "°C", "temperature", "measurement", "", tempgoal_topic, 0);
   delay(100);
-  publishMQTTDiscovery("Mode", "sensor", "mdi:auto-mode", "", "", "", "", mode_topic);
+  publishMQTTSensorDiscovery("Mode", "sensor", "mdi:auto-mode", "", "", "", "", mode_topic, "");
   delay(100);
-  publishMQTTDiscovery("Heating", "sensor", "mdi:heat-wave", "", "", "", "", heating_topic);
+  publishMQTTSensorDiscovery("Heating", "sensor", "mdi:heat-wave", "", "", "", "", heating_topic, "");
   delay(100);
   // Parameters
-  publishMQTTDiscovery("On Temperature", "sensor", "mdi:fire", "°C", "temperature", "measurement", "diagnostic", ontemperature_topic);
+  publishMQTTSensorDiscovery("On Temperature", "sensor", "mdi:fire", "°C", "temperature", "measurement", "diagnostic", ontemperature_topic, 0);
   delay(100);
-  publishMQTTDiscovery("Off Temperature", "sensor", "mdi:snowflake-alert", "°C", "temperature", "measurement", "diagnostic", offtemperature_topic);
+  publishMQTTSensorDiscovery("Off Temperature", "sensor", "mdi:snowflake-alert", "°C", "temperature", "measurement", "diagnostic", offtemperature_topic, 0);
   delay(100);
-  publishMQTTDiscovery("Control Range", "sensor", "mdi:car-cruise-control", "", "", "", "diagnostic", tempcontrolrange_topic);
+  publishMQTTSensorDiscovery("Control Range", "sensor", "mdi:car-cruise-control", "", "", "", "diagnostic", tempcontrolrange_topic, 2);
   delay(100);
-  publishMQTTDiscovery("Safety Temperature", "sensor", "mdi:seatbelt", "°C", "temperature", "measurement", "diagnostic", safetytemp_topic);
+  publishMQTTSensorDiscovery("Safety Temperature", "sensor", "mdi:seatbelt", "°C", "temperature", "measurement", "diagnostic", safetytemp_topic, 0);
   delay(100);
-  publishMQTTDiscovery("Refresh Rate", "sensor", "mdi:refresh", "", "", "", "diagnostic", refreshRate_topic);
+  publishMQTTSensorDiscovery("Refresh Rate", "sensor", "mdi:refresh", "", "", "", "diagnostic", refreshRate_topic, 0);
   delay(100);
-  publishMQTTDiscovery("Time Offset", "sensor", "mdi:clock-time-eight-outline", "", "", "", "diagnostic", timeoffset_topic);
+  publishMQTTSensorDiscovery("Time Offset", "sensor", "mdi:clock-time-eight-outline", "", "", "", "diagnostic", timeoffset_topic, 0);
   delay(100);
-  publishMQTTDiscovery("Temperature Offset", "sensor", "mdi:thermometer-chevron-up", "", "", "", "diagnostic", tempoffset_topic);
+  publishMQTTSensorDiscovery("Temperature Offset", "sensor", "mdi:thermometer-chevron-up", "", "", "", "diagnostic", tempoffset_topic, 1);
   delay(100);
   // Climate
   publishMQTTClimateDiscovery("thermostat", "climate"); 
