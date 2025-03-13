@@ -28,12 +28,13 @@
 #include <PubSubClient.h>
 #include <HTTPClient.h>
 #include <Update.h>
+#include "ScioSense_ENS160.h"  // ENS160 library
 
 /************************** Device Settings ***********************************/
 
 // Device-specific settings
 const char* deviceName = "thermostat";
-const char* currentSwVersion = "1.4.1";
+const char* currentSwVersion = "1.4.3";
 const char* deviceModel = "ESP32-NodeMCU";
 const char* deviceManufacturer = "BTM Engineering";
 String configurationUrl = "";
@@ -53,6 +54,9 @@ int TEMP_ADDRESS = 2;                               // EEPROM address to store l
 float celsius;
 float hum;
 float pres;
+float aqi;
+float tvoc;
+float eco;
 
 // Calibration constants
 double tempCalibration = -3.2;                      // Calibration constant for temperature readings
@@ -66,17 +70,17 @@ int previousAngle;                                  // Previous angle setting
 int servoLastAngle = 90;                            // Last servo angle before reboot
 
 // Refresh loop parameters
-int refreshRate = 60;                               // Measurement loop length [s]
+int refreshRate = 60;                       // Measurement loop length [s]
 int refreshLoop = 1;                                // Number of refresh loops
 int connectRate = 300;                              // Connection check loop length [s]
 bool manualTrigger = false;  
 unsigned long previousMillisMain = 0;
 unsigned long previousMillisMQTT = 0;               // MQTT reconnect timing
 unsigned long previousMillisWiFi = 0;               // WiFi reconnect timing
-unsigned long mqttReconnectInterval = 5000;         // Check MQTT every 5 seconds
-unsigned long wifiReconnectInterval = 5000;         // Check WiFi every 5 seconds 
-unsigned long wifiRetryMaxInterval = 30000;         // 30 seconds max
-unsigned long mqttRetryMaxInterval = 60000;         // 60 seconds max 
+unsigned long mqttReconnectInterval = 5000;   // Check MQTT every 5 seconds
+unsigned long wifiReconnectInterval = 5000;   // Check WiFi every 5 seconds 
+unsigned long wifiRetryMaxInterval = 30000;    // 30 seconds max
+unsigned long mqttRetryMaxInterval = 60000;    // 60 seconds max 
 
 
 // Temperature control parameters
@@ -90,8 +94,7 @@ bool autoMode = false;                              // Auto mode on/off state bo
 bool lcdMode = true;                                // LCD on/off state bool
 bool wifiStatus = false;                            // WiFi status indicator
 long wifiStrength;                                  // WiFi strength value
-String mode = "heat";                               // Active temperature control mode (auto, heat, cool, off)
-int coolTemperature = 14; 
+String mode = "heat";                               // Active temperature control mode (auto, heat, cool, off) 
 
 // Default temperature schedule
 //[01, 02, 03, 04, 05, 06, 07, 08, 09, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24]
@@ -127,6 +130,7 @@ int incrementDelay = 75;
 Adafruit_BME280 bme;
 Servo servo;
 LiquidCrystal_I2C lcd = LiquidCrystal_I2C(0x27, 16, 2);
+ScioSense_ENS160      ens160(ENS160_I2CADDR_1);
 
 #define SERVO_PIN 2
 #define EEPROM_SIZE 30
@@ -193,7 +197,7 @@ String tempgoal_topic =                     String("home/") + deviceName + Strin
 String mode_topic =                         String("home/") + deviceName + String("/mode");
 String heating_topic =                      String("home/") + deviceName + String("/heating");
 String tvoc_topic =                         String("home/") + deviceName + String("/tvoc");
-String co_topic =                           String("home/") + deviceName + String("/co");
+String eco_topic =                          String("home/") + deviceName + String("/eco");
 String aqi_topic =                          String("home/") + deviceName + String("/aqi");
 
 // Climate
@@ -565,7 +569,7 @@ void publishMQTTSensorDiscovery(String name, String deviceType,	String icon, Str
     {
       doc["state_class"] = stateClass; 
     }
-    if(stateClass != "")
+    if(displayPrecision != -1)
     {
       doc["suggested_display_precision"] = displayPrecision; 
     }
@@ -659,21 +663,21 @@ void sendDiscoveries()
 {
 	// Diagnostics
   // name, deviceType, icon, unitOfMeasurement, deviceClass, stateClass, entityCategory, stateTopic, displayPrecision
-  publishMQTTSensorDiscovery("Up Time", "sensor","mdi:clock", "h", "duration", "total_increasing", "diagnostic", uptime_topic, "");
+  publishMQTTSensorDiscovery("Up Time", "sensor","mdi:clock", "h", "duration", "total_increasing", "diagnostic", uptime_topic, -1);
   delay(100);
-	publishMQTTSensorDiscovery("OTA Status", "sensor", "mdi:update", "", "", "", "diagnostic", ota_status_topic, "");
+	publishMQTTSensorDiscovery("OTA Status", "sensor", "mdi:update", "", "", "", "diagnostic", ota_status_topic, -1);
   delay(100);
-	publishMQTTSensorDiscovery("Firmware Version", "sensor", "mdi:application-outline", "", "", "", "diagnostic", firmware_topic, "");
+	publishMQTTSensorDiscovery("Firmware Version", "sensor", "mdi:application-outline", "", "", "", "diagnostic", firmware_topic, -1);
   delay(100);
-	publishMQTTSensorDiscovery("Error", "sensor", "mdi:alert-circle-outline", "", "", "", "diagnostic", log_error_topic, "");
+	publishMQTTSensorDiscovery("Error", "sensor", "mdi:alert-circle-outline", "", "", "", "diagnostic", log_error_topic, -1);
   delay(100);
-	publishMQTTSensorDiscovery("Warning", "sensor", "mdi:shield-alert-outline", "", "", "", "diagnostic", log_warning_topic, "");
+	publishMQTTSensorDiscovery("Warning", "sensor", "mdi:shield-alert-outline", "", "", "", "diagnostic", log_warning_topic, -1);
   delay(100);
-	publishMQTTSensorDiscovery("Info", "sensor", "mdi:information-outline", "", "", "", "diagnostic", log_info_topic, "");
+	publishMQTTSensorDiscovery("Info", "sensor", "mdi:information-outline", "", "", "", "diagnostic", log_info_topic, -1);
   delay(100);
-	publishMQTTSensorDiscovery("IP Address", "sensor", "mdi:ip-network-outline", "", "", "", "diagnostic", ip_topic, "");
+	publishMQTTSensorDiscovery("IP Address", "sensor", "mdi:ip-network-outline", "", "", "", "diagnostic", ip_topic, -1);
   delay(100);
-  publishMQTTSensorDiscovery("WiFi Strength", "sensor", "mdi-rss", "", "", "", "diagnostic", wifi_strength_topic, "");
+  publishMQTTSensorDiscovery("WiFi Strength", "sensor", "mdi-rss", "", "", "", "diagnostic", wifi_strength_topic, -1);
   delay(100);
   // Sensors
   publishMQTTSensorDiscovery("Temperature", "sensor", "mdi:home-thermometer", "°C", "temperature", "measurement", "", temperature_topic, 2);
@@ -684,9 +688,15 @@ void sendDiscoveries()
   delay(100);
   publishMQTTSensorDiscovery("Temp Goal", "sensor", "mdi:target", "°C", "temperature", "measurement", "", tempgoal_topic, 0);
   delay(100);
-  publishMQTTSensorDiscovery("Mode", "sensor", "mdi:auto-mode", "", "", "", "", mode_topic, "");
+  publishMQTTSensorDiscovery("Mode", "sensor", "mdi:auto-mode", "", "", "", "", mode_topic, -1);
   delay(100);
-  publishMQTTSensorDiscovery("Heating", "sensor", "mdi:heat-wave", "", "", "", "", heating_topic, "");
+  publishMQTTSensorDiscovery("Heating", "sensor", "mdi:heat-wave", "", "", "", "", heating_topic, -1);
+  delay(100);
+  publishMQTTSensorDiscovery("AQI", "sensor", "mdi:air-filter", "", "", "measurement", "", aqi_topic, 0);
+  delay(100);
+  publishMQTTSensorDiscovery("TVOC", "sensor", "mdi:leaf-circle-outline", "", "", "measurement", "", tvoc_topic, 0);
+  delay(100);
+  publishMQTTSensorDiscovery("eCO2", "sensor", "mdi:molecule-co2", "", "", "measurement", "", eco_topic, 0);
   delay(100);
   // Parameters
   publishMQTTSensorDiscovery("On Temperature", "sensor", "mdi:fire", "°C", "temperature", "measurement", "diagnostic", ontemperature_topic, 0);
@@ -858,6 +868,20 @@ void setup()
 
   // Load mode
   autoMode = EEPROM.read(MODE_ADDRESS);
+
+  // Initialize Air Quality sensor
+  Serial.print("ENS160...");
+  ens160.begin();
+  Serial.println(ens160.available() ? "done." : "failed!");
+  if (ens160.available()) {
+    // Print ENS160 versions
+    Serial.print("\tRev: "); Serial.print(ens160.getMajorRev());
+    Serial.print("."); Serial.print(ens160.getMinorRev());
+    Serial.print("."); Serial.println(ens160.getBuild());
+  
+    Serial.print("\tStandard mode ");
+    Serial.println(ens160.setMode(ENS160_OPMODE_STD) ? "done." : "failed!");
+  }
                
   delay(3000);
 
@@ -949,23 +973,36 @@ void loop()
     Serial.print(pres);
     Serial.println(" hPa");
 
+    // Read Air Quality sensor
+    if (ens160.available()) {
+      ens160.measure(true);
+      ens160.measureRaw(true);
+
+      aqi = ens160.getAQI();
+      Serial.print("AQI: ");
+      Serial.print(aqi);
+      Serial.println(" ");
+
+      tvoc = ens160.getTVOC();
+      Serial.print("TVOC: ");
+      Serial.print(tvoc);
+      Serial.println("ppb");
+
+      eco = ens160.geteCO2();
+      Serial.print("eCO2: ");
+      Serial.print(eco);
+      Serial.println("ppm");
+    }
+
     if (!client.connected()) 
     {
       Serial.println("--------------------------------------");  
       Serial.println("MQTT connection: Not Connected");
 
-      // Check current mode
+      // Set servo if automatic mode on
       if (mode == "auto")
       {
         tempGoal = tempSchedule[timeDay][timeStamp];
-      }
-      else if (mode == "cool")
-      {
-        tempGoal = coolTemperature;
-      }
-      else if (mode == "off")
-      {
-
       }
 
       // In safe mode -> set temperature to latest tempGoal
@@ -991,20 +1028,15 @@ void loop()
       publishMessage(humidity_topic, hum, false);
       publishMessage(pressure_topic, pres, false);
       publishMessage(tempgoal_topic, tempGoal, false);
-      publishMessage(mode_topic, mode, false);   
+      publishMessage(mode_topic, mode, false);
+      publishMessage(aqi_topic, aqi, false);
+      publishMessage(tvoc_topic, tvoc, false);   
+      publishMessage(eco_topic, eco, false);
     
-      // Check current mode
+      // Check for active mode
       if (mode == "auto")
       {
         tempGoal = tempSchedule[timeDay][timeStamp];
-      }
-      else if (mode == "cool")
-      {
-        tempGoal = coolTemperature;
-      }
-      else if (mode == "off")
-      {
-
       }
 
       Serial.print("Temperature Goal: ");
@@ -1380,21 +1412,6 @@ void handleMode(String setMode)
   {
     autoMode = false;
     mode = "cool";
-    Serial.print("    [RPC] Mode: ");
-    Serial.println(autoMode);
-
-    // Save mode setup to EEPROM
-    EEPROM.write(MODE_ADDRESS, autoMode);
-    EEPROM.commit();
-
-    // Just an response example
-    publishMessage(mode_topic, mode, false);
-    publishMessage(climate_mode_state_topic, mode, false);
-  }
-  if(setMode == "off")
-  {
-    autoMode = false;
-    mode = "off";
     Serial.print("    [RPC] Mode: ");
     Serial.println(autoMode);
 

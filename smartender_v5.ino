@@ -30,7 +30,7 @@
 
 // Device-specific settings
 const char* deviceName = "smartender";
-const char* currentSwVersion = "1.0.6";
+const char* currentSwVersion = "1.0.9";
 const char* deviceModel = "ESP32-NodeMCU";
 const char* deviceManufacturer = "BTM Engineering";
 String configurationUrl = "";
@@ -1106,7 +1106,7 @@ void fan(bool state)
       digitalWrite(fanPin, LOW);
     }
 
-    publishMessage(fan_topic, statusFan ? "ON" : "OFF", false);
+    //publishMessage(fan_topic, statusFan ? "ON" : "OFF", false);
 }
 
 void blinkLED(int blinkDelay, int blinkNumber)
@@ -1280,7 +1280,7 @@ void sleepModeOFF()
     Serial.println("        Sleep Mode OFF");
     Serial.println("--------------------------------");
 
-    consoleLog("Waking up from sleep mode", 1);
+    //consoleLog("Waking up from sleep mode", 1);
     
     // Reset activity timer
     activityMillis = millis();
