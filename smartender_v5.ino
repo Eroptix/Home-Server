@@ -30,7 +30,7 @@
 
 // Device-specific settings
 const char* deviceName = "smartender";
-const char* currentSwVersion = "1.0.9";
+const char* currentSwVersion = "1.1.0";
 const char* deviceModel = "ESP32-NodeMCU";
 const char* deviceManufacturer = "BTM Engineering";
 String configurationUrl = "";
@@ -120,6 +120,7 @@ const int longPressTime  = 3000;
 // Sleep parameters
 const int sleepTime  = 300000; // 5 mins
 unsigned long activityMillis  = 0;
+bool sleepMode = false;
 
 // GPIO where the DS18B20 is connected to  
 AccelStepper stepper = AccelStepper(1, stepperSTEP, stepperDIR);
@@ -136,6 +137,7 @@ float scaleCalibrationFactor = 202;
 bool buttonCheck = false;
 int glassWeight = 240;
 float dailyAmount = 0;
+bool readyToServe = false;
 
 // Setting PWM properties
 const int ledChannel = 1;
@@ -243,9 +245,6 @@ void mqttCallback(char* topic, byte* payload, unsigned int length)
   Serial.print(topic);
   Serial.print(": ");
   Serial.println(message);
-
-  // Turn off sleep mode
-  sleepModeOFF();
 
   // Handle commands
   if (String(topic) == ota_response_topic) 
@@ -485,7 +484,8 @@ void requestParameters()
 }
 
 // Remove white spaces from a String input
-String removeSpaces(String input) {
+String removeSpaces(String input) 
+{
   String output = "";
   for (int i = 0; i < input.length(); i++) {
     if (input[i] != ' ') {  
@@ -495,8 +495,8 @@ String removeSpaces(String input) {
   return output;
 }
 
-// Create default discovery payload
-void publishMQTTDiscovery(String name, String deviceType,	String icon, String unitOfMeasurement, String deviceClass, String stateClass, String entityCategory, String stateTopic) 
+// Create sensor discovery payload
+void publishMQTTSensorDiscovery(String name, String deviceType,	String icon, String unitOfMeasurement, String deviceClass, String stateClass, String entityCategory, String stateTopic, int displayPrecision) 
 {
     // Construct IDs
     String uniqueID = String(deviceName) + "-" + removeSpaces(name);
@@ -530,10 +530,14 @@ void publishMQTTDiscovery(String name, String deviceType,	String icon, String un
     {
       doc["state_class"] = stateClass; 
     }
+    if(displayPrecision != -1)
+    {
+      doc["suggested_display_precision"] = displayPrecision; 
+    }
     doc["availability_topic"] = availability_topic;
     doc["payload_available"] = "connected";
     doc["payload_not_available"] = "connection lost";
-
+    
     // Add the device object
     JsonObject device = doc.createNestedObject("device");
     JsonArray identifiers = device.createNestedArray("identifiers");
@@ -561,49 +565,49 @@ void publishMQTTDiscovery(String name, String deviceType,	String icon, String un
 void sendDiscoveries()
 {
   // Diagnostics
-  publishMQTTDiscovery("Up Time", "sensor","mdi:clock", "h", "duration", "total_increasing", "diagnostic", uptime_topic);
+  publishMQTTSensorDiscovery("Up Time", "sensor","mdi:clock", "h", "duration", "total_increasing", "diagnostic", uptime_topic, 0);
   delay(100);
-	publishMQTTDiscovery("OTA Status", "sensor", "mdi:update", "", "", "", "diagnostic", ota_status_topic);
+	publishMQTTSensorDiscovery("OTA Status", "sensor", "mdi:update", "", "", "", "diagnostic", ota_status_topic, -1);
   delay(100);
-	publishMQTTDiscovery("Firmware Version", "sensor", "mdi:application-outline", "", "", "", "diagnostic", firmware_topic);
+	publishMQTTSensorDiscovery("Firmware Version", "sensor", "mdi:application-outline", "", "", "", "diagnostic", firmware_topic, -1);
   delay(100);
-	publishMQTTDiscovery("Error", "sensor", "mdi:alert-circle-outline", "", "", "", "diagnostic", log_error_topic);
+	publishMQTTSensorDiscovery("Error", "sensor", "mdi:alert-circle-outline", "", "", "", "diagnostic", log_error_topic, -1);
   delay(100);
-	publishMQTTDiscovery("Warning", "sensor", "mdi:shield-alert-outline", "", "", "", "diagnostic", log_warning_topic);
+	publishMQTTSensorDiscovery("Warning", "sensor", "mdi:shield-alert-outline", "", "", "", "diagnostic", log_warning_topic, -1);
   delay(100);
-	publishMQTTDiscovery("Info", "sensor", "mdi:information-outline", "", "", "", "diagnostic", log_info_topic);
+	publishMQTTSensorDiscovery("Info", "sensor", "mdi:information-outline", "", "", "", "diagnostic", log_info_topic, -1);
   delay(100);
-	publishMQTTDiscovery("IP Address", "sensor", "mdi:ip-network-outline", "", "", "", "diagnostic", ip_topic);
+	publishMQTTSensorDiscovery("IP Address", "sensor", "mdi:ip-network-outline", "", "", "", "diagnostic", ip_topic, -1);
   delay(100);
-  publishMQTTDiscovery("WiFi Strength", "sensor", "mdi-rss", "", "", "", "diagnostic", wifi_strength_topic);
+  publishMQTTSensorDiscovery("WiFi Strength", "sensor", "mdi-rss", "", "", "", "diagnostic", wifi_strength_topic, -1);
   delay(100);
   // Sensors
-  publishMQTTDiscovery("Weight", "sensor", "mdi:weight", "g", "weight", "measurement", "", weight_topic);
+  publishMQTTSensorDiscovery("Weight", "sensor", "mdi:weight", "g", "weight", "measurement", "", weight_topic, 0);
   delay(100);
-  publishMQTTDiscovery("Daily Amount", "sensor", "mdi:cup", "L", "volume", "measurement", "", dailyamount_topic);
+  publishMQTTSensorDiscovery("Daily Amount", "sensor", "mdi:cup", "L", "volume", "measurement", "", dailyamount_topic, 0);
   delay(100);
-  publishMQTTDiscovery("Pump 1", "binary_sensor", "mdi:pump", "", "moving", "", "", pump1_topic);
+  publishMQTTSensorDiscovery("Pump 1", "binary_sensor", "mdi:pump", "", "moving", "", "", pump1_topic, -1);
   delay(100);
-  publishMQTTDiscovery("Pump 2", "binary_sensor", "mdi:pump", "", "moving", "", "", pump2_topic);
+  publishMQTTSensorDiscovery("Pump 2", "binary_sensor", "mdi:pump", "", "moving", "", "", pump2_topic, -1);
   delay(100);
-  publishMQTTDiscovery("Pump 3", "binary_sensor", "mdi:pump", "", "moving", "", "", pump3_topic);
+  publishMQTTSensorDiscovery("Pump 3", "binary_sensor", "mdi:pump", "", "moving", "", "", pump3_topic, -1);
   delay(100);
-  publishMQTTDiscovery("Pump 4", "binary_sensor", "mdi:pump", "", "moving", "", "", pump4_topic);
+  publishMQTTSensorDiscovery("Pump 4", "binary_sensor", "mdi:pump", "", "moving", "", "", pump4_topic, -1);
   delay(100);
-  publishMQTTDiscovery("Pump 5", "binary_sensor", "mdi:pump", "", "moving", "", "", pump5_topic);
+  publishMQTTSensorDiscovery("Pump 5", "binary_sensor", "mdi:pump", "", "moving", "", "", pump5_topic, -1);
   delay(100);
-  publishMQTTDiscovery("Pump 6", "binary_sensor", "mdi:pump", "", "moving", "", "", pump6_topic);
+  publishMQTTSensorDiscovery("Pump 6", "binary_sensor", "mdi:pump", "", "moving", "", "", pump6_topic, -1);
   delay(100);
-  publishMQTTDiscovery("Fan", "binary_sensor", "mdi:fan", "", "running", "", "", fan_topic);
+  publishMQTTSensorDiscovery("Fan", "binary_sensor", "mdi:fan", "", "running", "", "", fan_topic, -1);
   delay(100);
-  publishMQTTDiscovery("Motor", "binary_sensor", "mdi:rotate-360", "", "running", "", "", motor_topic);
+  publishMQTTSensorDiscovery("Motor", "binary_sensor", "mdi:rotate-360", "", "running", "", "", motor_topic, -1);
   delay(100);
-  publishMQTTDiscovery("Peltier", "binary_sensor", "mdi:snowflake-alert", "", "running", "", "", peltier_topic);
+  publishMQTTSensorDiscovery("Peltier", "binary_sensor", "mdi:snowflake-alert", "", "running", "", "", peltier_topic, -1);
   delay(100);
   // Parameters
-  publishMQTTDiscovery("Glass Weight", "sensor", "mdi:glass-cocktail", "g", "weight", "measurement", "diagnostic", glassweight_topic);
+  publishMQTTSensorDiscovery("Glass Weight", "sensor", "mdi:glass-cocktail", "g", "weight", "measurement", "diagnostic", glassweight_topic, 0);
   delay(100);
-  publishMQTTDiscovery("Calibration", "sensor", "mdi:calculator-variant-outline", "", "", "measurement", "diagnostic", calibration_topic);
+  publishMQTTSensorDiscovery("Calibration", "sensor", "mdi:calculator-variant-outline", "", "", "measurement", "diagnostic", calibration_topic, 0);
   delay(100);
 }
 
@@ -793,7 +797,7 @@ void loop(void)
   }
 
   // Check sleep time
-  if(currentMillis - activityMillis > sleepTime)
+  if (!sleepMode && (currentMillis - activityMillis > sleepTime))
   {
     // Sleep mode activated
     sleepModeON();
@@ -802,7 +806,7 @@ void loop(void)
   client.loop();
 
   // Check button state
-  checkPushButton();
+  // checkPushButton();
 
   // Standby loop
   if (currentMillis - previousMillis1 >= period1) 
@@ -814,10 +818,12 @@ void loop(void)
       if(standByWeight<100)
       {
         consoleLog("Place your glass on the stand", 1);
+        readyToServe = false;
       }
       else 
       {
         consoleLog("Ready to serve drinks", 1);
+        readyToServe = true;
       }
 
       // Refresh dashboard
@@ -1106,7 +1112,7 @@ void fan(bool state)
       digitalWrite(fanPin, LOW);
     }
 
-    //publishMessage(fan_topic, statusFan ? "ON" : "OFF", false);
+    publishMessage(fan_topic, statusFan ? "ON" : "OFF", false);
 }
 
 void blinkLED(int blinkDelay, int blinkNumber)
@@ -1258,6 +1264,8 @@ void sleepModeON()
     Serial.println("--------------------------------");
 
     consoleLog("Entering sleep mode", 1);
+
+    sleepMode = true;
     
     // Set sleep brightness
     while(dutyCycleLED > sleepDutyCycleLED)
@@ -1276,28 +1284,32 @@ void sleepModeON()
 
 void sleepModeOFF()
 {
-    Serial.println("--------------------------------");
-    Serial.println("        Sleep Mode OFF");
-    Serial.println("--------------------------------");
+  Serial.println("--------------------------------");
+  Serial.println("        Sleep Mode OFF");
+  Serial.println("--------------------------------");
+  
+  // Always reset activity timer, regardless of sleep state
+  activityMillis = millis();  
 
-    //consoleLog("Waking up from sleep mode", 1);
-    
-    // Reset activity timer
-    activityMillis = millis();
-    
-    // Set normal mode brightness
-    while(dutyCycleLED < operationDutyCycleLED)
-    {
-        dutyCycleLED++;
-        ledcWrite(ledChannel, dutyCycleLED);
-        delay(10);
-    }
+  if (!sleepMode) return;  // Prevent unnecessary re-execution if already awake
 
-    // Turn on stepper driver
-    digitalWrite(stepperSLP,HIGH);
+  consoleLog("Waking up from sleep mode", 1);
 
-    // Turn on cooling fan
-    fan(true);
+  sleepMode = false;
+  
+  // Set normal mode brightness
+  while(dutyCycleLED < operationDutyCycleLED)
+  {
+      dutyCycleLED++;
+      ledcWrite(ledChannel, dutyCycleLED);
+      delay(10);
+  }
+
+  // Turn on stepper driver
+  digitalWrite(stepperSLP, HIGH);
+
+  // Turn on cooling fan
+  fan(true);
 }
 
 void checkPushButton() 
@@ -1396,29 +1408,42 @@ void dispense(int drink, float amount)
 // Handle commands received via MQTT
 void handleCommands(String message) 
 {
+  // Turn off sleep mode
+  sleepModeOFF();
+  
   if (message == "reboot") 
   {
     consoleLog("Command received: Reboot", 1);
     restartESP();
   }
-  if (message == "request parameters") 
+   else if (message == "request parameters") 
   {
     consoleLog("Command received: Parameter Request", 1);
     requestParameters();
   }
-  if (message == "send parameters") 
+  else if (message == "send parameters") 
   {
     consoleLog("Command received: Parameter Send", 1);
     sendParameters();
   }
-  if (message == "send discoveries") 
+  else if (message == "send discoveries") 
   {
     consoleLog("Command received: Discovery Send", 1);
     sendDiscoveries();
   }
-  if (message == "servo off") 
+  else if (message == "sleep on") 
   {
-    consoleLog("Command received: Servo Off", 1);
+    consoleLog("Command received: Sleep Mode Activated", 1);
+    sleepModeON();
+  }
+  else if (message == "adjust scale") 
+  {
+    consoleLog("Command received: Scale Calibration", 1);
+    adjustScaleCalibration(glassWeight);
+  }
+  else 
+  {
+    consoleLog("Unknown command received", 2);
   }
 }
 
@@ -1471,6 +1496,9 @@ void handleDrinks(const String& jsonPayload)
   }
   */
 
+  // Turn off sleep mode
+  sleepModeOFF();
+
   // Create a JSON document (adjust size if needed)
   StaticJsonDocument<1024> doc;
 
@@ -1522,32 +1550,40 @@ void handleDrinks(const String& jsonPayload)
 
   // Check total volume
   int totalVolume = pump1 + pump2 + pump3 + pump4 + pump5 + pump6;
-  if(totalVolume > 250)
+  if(totalVolume > 200)
   {
     consoleLog("Total requested drink volume exceeds maximum", 2);
     return;
   }
 
-  // Start dispensing drink with the received recipe
-  consoleLog(String("Mixing drink: ") + name, 1);
+  if(readyToServe)
+  {
+    // Start dispensing drink with the received recipe
+    consoleLog(String("Mixing drink: ") + name, 1);
 
-  if(head){stepper.runToNewPosition(headMovement);}       // Lower stirring head
-  if(pump3 != 0){dispense(3, pump3);}                     // Dispense with pump3
-  delay(200);
-  if(pump4 != 0){dispense(4, pump4);}                     // Dispense with pump4
-  delay(200);
-  if(pump5 != 0){dispense(5, pump5);}                     // Dispense with pump5
-  delay(200);
-  if(pump6 != 0){dispense(6, pump6);}                     // Dispense with pump6
-  delay(200);
-  if(pump1 != 0){dispense(1, pump1);}                     // Dispense with pump1
-  delay(200);
-  if(pump2 != 0){dispense(2, pump2);}                     // Dispense with pump2
-  delay(200);
-  if(stirring != 0){motorStirring(stirring);}             // Stir the finished drink
-  if(head){stepper.runToNewPosition(0);}                  // Raise stirring head
+    if(head){stepper.runToNewPosition(headMovement);}       // Lower stirring head
+    if(pump3 != 0){dispense(3, pump3);}                     // Dispense with pump3
+    delay(200);
+    if(pump4 != 0){dispense(4, pump4);}                     // Dispense with pump4
+    delay(200);
+    if(pump5 != 0){dispense(5, pump5);}                     // Dispense with pump5
+    delay(200);
+    if(pump6 != 0){dispense(6, pump6);}                     // Dispense with pump6
+    delay(200);
+    if(pump1 != 0){dispense(1, pump1);}                     // Dispense with pump1
+    delay(200);
+    if(pump2 != 0){dispense(2, pump2);}                     // Dispense with pump2
+    delay(200);
+    if(stirring != 0){motorStirring(stirring);}             // Stir the finished drink
+    if(head){stepper.runToNewPosition(0);}                  // Raise stirring head
+  
+    consoleLog("Drink finished", 1);
+  
+    waitForRemove();
+  }
+  else
+  {
+    consoleLog("Not ready to serve drink, 2");
+  }
 
-  consoleLog("Drink finished", 1);
-
-  waitForRemove();
 }
