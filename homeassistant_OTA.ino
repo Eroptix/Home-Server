@@ -1,69 +1,48 @@
+// ESP32 Automated Bartender control code
+//
+// Written by Tamas Bozso for BTM Engineering
+// Copyright (c) 2021 BTM Engineering
+// Licensed under the MIT license.
+//
+// All text above must be included in any redistribution.
+
+/************************** Libraries ***********************************/
 #include <WiFi.h>
-#include <PubSubClient.h>
+#include <OneWire.h>
+#include <ESPmDNS.h>
+#include <Update.h>
+#include <Espressif_Updater.h>
 #include <HTTPClient.h>
 #include <Update.h>
 #include <ArduinoJson.h>
+#include <PubSubClient.h>
 
-// Wi-Fi credentials
-const char* WIFI_SSID = "UPC8F21BEF";
-const char* WIFI_PASS = "k7pp3aexkmQh";
+#define WIFI_SSID "UPC8F21BEF"
+#define WIFI_PASS "k7pp3aexkmQh"
+
+/************************** Device Settings ***********************************/
 
 // Device-specific settings
 const char* deviceName = "testDevice";
-const char* currentSwVersion = "1.3.0";
-const char* deviceModel = "ESP32-C3";
+const char* currentSwVersion = "1.0.1";
+const char* deviceModel = "ESP32-NodeMCU";
 const char* deviceManufacturer = "BTM Engineering";
 String configurationUrl = "";
-
 String  firmwareUrl;
 String  latestSwVersion;
-
-IPAddress local_IP(192, 168, 0, 116);
-IPAddress gateway(192, 168, 0, 1);
-IPAddress subnet(255, 255, 255, 0);
-IPAddress dns(8, 8, 8, 8);
-
-float testAttribute1;
-float testAttribute2;
-
-bool connectWifi()
-{
-  int attempts = 1;
   
-  // Connect to WiFi network
-  WiFi.begin(WIFI_SSID, WIFI_PASS);
-  WiFi.config(local_IP, gateway, subnet, dns);
-
-  // Wait for connection
-  while (WiFi.status() != WL_CONNECTED) {
-    attempts = attempts + 1;
-    delay(500);
-    Serial.print(".");
-
-    if(attempts == 50){
-      // Failed to connect
-      Serial.println("Failed to connect to WiFi");
-      return false;
-    }
-  }
-  
-  configurationUrl = WiFi.localIP().toString();
-
-  Serial.println("");
-  Serial.print("Connected to ");
-  Serial.println(WIFI_SSID);
-  Serial.print("IP address: ");
-  Serial.println(WiFi.localIP());
-
-  return true;
-}
-
-void restartESP()
-{
-  Serial.println("Rebooting ESP32");
-  delay(2000);
-  esp_restart();
-}
+// Refresh loop parameters
+int refreshRate = 5;                                // Measurement loop length
+unsigned long previousMillis1 = 0;
+const long period1 = refreshRate * 1000;
+unsigned long previousMillisMQTT = 0;               // MQTT reconnect timing
+unsigned long previousMillisWiFi = 0;               // WiFi reconnect timing
+unsigned long mqttReconnectInterval = 5000;         // Check MQTT every 5 seconds
+unsigned long wifiReconnectInterval = 5000;         // Check WiFi every 5 seconds 
+unsigned long wifiRetryMaxInterval = 30000;         // 30 seconds max
+unsigned long mqttRetryMaxInterval = 60000;         // 60 seconds max 
+bool wifiStatus = false;                            // WiFi status indicator
+long wifiStrength;                                  // WiFi strength value 
 
 /************************** HomeAssistant Settings ***********************************/
 
@@ -71,21 +50,24 @@ void restartESP()
 const char* mqtt_server = "192.168.0.241";
 const int mqtt_port = 1783;
 const char* mqtt_client_id = deviceName;
+bool mqttStatus = false;
 
 // MQTT topics
-const char* ota_query_topic = "home/ota/query";
-const char* parameter_request_topic = "home/parameters/request";
-String availability_topic = String("home/") + deviceName + String("/available");
-String parameter_response_topic = String("home/") + deviceName + String("/parameters");
-String ota_status_topic = String("home/") + deviceName + String("/ota/status");
-String ota_response_topic = String("home/") + deviceName + String("/ota/response");
-String log_info_topic = String("home/") + deviceName + String("/log/info");
-String log_warning_topic = String("home/") + deviceName + String("/log/warning");
-String log_error_topic = String("home/") + deviceName + String("/log/error");
-String command_topic = String("home/") + deviceName + String("/command");
-String uptime_topic = String("home/") + deviceName + String("/uptime");
-String firmware_topic = String("home/") + deviceName + String("/firmware");
-String ip_topic = String("home/") + deviceName + String("/ip");
+// Diagnostic
+String ota_query_topic =                    String("home/ota/query");
+String parameter_request_topic =            String("home/parameters/request");
+String availability_topic =                 String("home/") + deviceName + String("/available");
+String parameter_response_topic =           String("home/") + deviceName + String("/parameters");
+String ota_status_topic =                   String("home/") + deviceName + String("/ota/status");
+String ota_response_topic =                 String("home/") + deviceName + String("/ota/response");
+String log_info_topic =                     String("home/") + deviceName + String("/log/info");
+String log_warning_topic =                  String("home/") + deviceName + String("/log/warning");
+String log_error_topic =                    String("home/") + deviceName + String("/log/error");
+String command_topic =                      String("home/") + deviceName + String("/command");
+String uptime_topic =                       String("home/") + deviceName + String("/uptime");
+String firmware_topic =                     String("home/") + deviceName + String("/firmware");
+String ip_topic =                           String("home/") + deviceName + String("/ip");
+String wifi_strength_topic =                String("home/") + deviceName + String("/wifi/strength");
 
 // Initalize the Mqtt client instance
 WiFiClient espClient;
@@ -94,7 +76,6 @@ PubSubClient client(espClient);
 // Connect to the predefined MQTT broker
 bool connectMQTT()
 {
-  bool connection = false;
   int attempts = 1;
   
   Serial.println("Connecting to MQTT server:");
@@ -103,28 +84,27 @@ bool connectMQTT()
   {
     if ( client.connect(mqtt_client_id) ) {
 
-      // Print MQTT topics used
-      printMQTTTopics();
-
       // Subscribe to command topics
-      subscribeTopic(ota_response_topic.c_str());
-      subscribeTopic(parameter_response_topic.c_str());
+      subscribeTopic(ota_response_topic);
+      subscribeTopic(command_topic);
+      subscribeTopic(parameter_response_topic);
 
       // Send discovery payload
 	    sendDiscoveries();
 
       Serial.println("	[DONE]");
-      connection = true;
+      mqttStatus = true;
     } 
     else {
       Serial.println("	[ERROR] Failed to connected to TB server (No: " + String(attempts) + ")");
       attempts = attempts + 1;
+      mqttStatus = false;
 	  
       delay(1000);
     }
   }
 
-  return connection;
+  return mqttStatus;
 }
 
 // MQTT Callback Function
@@ -144,71 +124,34 @@ void mqttCallback(char* topic, byte* payload, unsigned int length)
   {
     updateFirmwareOTA(message);
   }
-  if (String(topic) == parameter_response_topic) 
+  else if (String(topic) == parameter_response_topic) 
   {
     handleParameters(message);
   }
-  if (String(topic) == command_topic) 
+  else if (String(topic) == command_topic) 
   {
-    handleCommand(message);
+    handleCommands(message);
   }
-}
-
-// Handle Commands Received via MQTT
-void handleCommand(String message) 
-{
-  if (message == "on") {
-    Serial.println("Command received: ON");
-    // Add functionality for "on" command
-  } else if (message == "off") {
-    Serial.println("Command received: OFF");
-    // Add functionality for "off" command
-  } else {
-    Serial.print("Unknown command: ");
-    Serial.println(message);
+  else
+  {
+    consoleLog("Unknown MQTT message received", 2);
   }
-}
-
-// Handle Parameters Received via MQTT
-void handleParameters(const String& jsonPayload) 
-{
-    // Create a JSON document (adjust size if needed)
-    StaticJsonDocument<512> doc;
-
-    // Deserialize the JSON
-    DeserializationError error = deserializeJson(doc, jsonPayload);
-    if (error) {
-        Serial.print("JSON Parsing Failed: ");
-        Serial.println(error.c_str());
-        return;
-    }
-
-    // Extract values
-    testAttribute1 = doc["testAttribute1"].as<float>();
-    testAttribute2 = doc["testAttribute2"].as<float>();
-
-    // Print extracted values
-    Serial.println("  Extracted Parameters:");
-    Serial.print("    testAttribute1: ");
-    Serial.println(testAttribute1);
-    Serial.print("    testAttribute2: ");
-    Serial.println(testAttribute2);
 }
 
 // Subscribe to an MQTT topic
-void subscribeTopic(const char* topic)
+void subscribeTopic(String topic)
 {
-    client.subscribe(topic);
+    client.subscribe(topic.c_str());
     Serial.print("	Subscribed to: ");
     Serial.println(topic);
 }
 
 // Publish an MQTT message with an int payload
-void publishMessage(const char* topic, int payload, bool retain) 
+void publishMessage(String topic, int payload, bool retain) 
 {
   char message[16]; // Buffer to store the stringified payload
   itoa(payload, message, 10); // Convert int to string
-  if (client.publish(topic, message, retain)) {
+  if (client.publish(topic.c_str(), message, retain)) {
     Serial.print("Published to topic ");
     Serial.print(topic);
     Serial.print(": ");
@@ -219,11 +162,11 @@ void publishMessage(const char* topic, int payload, bool retain)
 }
 
 // Publish an MQTT message with a double payload
-void publishMessage(const char* topic, double payload, bool retain) 
+void publishMessage(String topic, double payload, bool retain) 
 {
   char message[16]; // Buffer to store the stringified payload
   dtostrf(payload, 1, 2, message); // Convert double to string with 2 decimal places
-  if (client.publish(topic, message, retain)) {
+  if (client.publish(topic.c_str(), message, retain)) {
     Serial.print("Published to topic ");
     Serial.print(topic);
     Serial.print(": ");
@@ -234,10 +177,10 @@ void publishMessage(const char* topic, double payload, bool retain)
 }
 
 // Publish an MQTT message with a boolean payload
-void publishMessage(const char* topic, bool payload, bool retain) 
+void publishMessage(String topic, bool payload, bool retain) 
 {
   const char* message = payload ? "true" : "false"; // Convert bool to "true"/"false"
-  if (client.publish(topic, message, retain)) {
+  if (client.publish(topic.c_str(), message, retain)) {
     Serial.print("Published to topic ");
     Serial.print(topic);
     Serial.print(": ");
@@ -248,10 +191,10 @@ void publishMessage(const char* topic, bool payload, bool retain)
 }
 
 // Publish an MQTT message with a String payload
-void publishMessage(const char* topic, String payload, bool retain) 
+void publishMessage(String topic, String payload, bool retain) 
 {
   const char* message = payload.c_str();
-  if (client.publish(topic, message, retain)) {
+  if (client.publish(topic.c_str(), message, retain)) {
     Serial.print("Published to topic ");
     Serial.print(topic);
     Serial.print(": ");
@@ -262,9 +205,9 @@ void publishMessage(const char* topic, String payload, bool retain)
 }
 
 // Publish an MQTT message with a const char* payload
-void publishMessage(const char* topic, const char* payload, bool retain) 
+void publishMessage(String topic, const char* payload, bool retain) 
 {
-  if (client.publish(topic, payload, retain)) {
+  if (client.publish(topic.c_str(), payload, retain)) {
     Serial.print("Published to topic ");
     Serial.print(topic);
     Serial.print(": ");
@@ -282,7 +225,7 @@ void parseOTAResponse(const String& response)
   // Deserialize the JSON
   DeserializationError error = deserializeJson(doc, response);
   if (error) {
-    Serial.print("JSON deserialization failed: ");
+    consoleLog("OTA update JSON deserialization failed ", 3);
     Serial.println(error.c_str());
     return;
   }
@@ -305,17 +248,18 @@ void parseOTAResponse(const String& response)
 // Handle OTA firmware update
 void performOTA() 
 {
-  Serial.println("[INFO] Starting OTA update...");
-  publishMessage(ota_status_topic.c_str(), "Updating", false);
+  consoleLog("Starting OTA update process", 1);
+  publishMessage(ota_status_topic.c_str(), "Updating", true);
   
   // Resource optimization: Check heap memory
   if (ESP.getFreeHeap() < 20000) {
-    Serial.println("[ERROR] Not enough memory for OTA. Aborting.");
-    publishMessage(ota_status_topic.c_str(), "Failed", false);
+    consoleLog("Not enough memory for OTA update", 3);
+    publishMessage(ota_status_topic.c_str(), "Failed", true);
     return;
   }
 
   HTTPClient http;
+
   http.setTimeout(10000); // Set 10-second timeout
 
   http.begin(firmwareUrl);
@@ -327,12 +271,12 @@ void performOTA()
       Serial.println("[INFO] HTTP request successful!");
     } else {
       Serial.printf("[ERROR] Unexpected HTTP response code: %d\n", httpCode);
-      publishMessage(ota_status_topic.c_str(), "Failed", false);
+      publishMessage(ota_status_topic.c_str(), "Failed", true);
     }
   } else {
     Serial.printf("[ERROR] HTTP request failed with code: %d\n", httpCode);
     Serial.printf("[ERROR] HTTP error: %s\n", http.errorToString(httpCode).c_str());
-    publishMessage(ota_status_topic.c_str(), "Failed", false);
+    publishMessage(ota_status_topic.c_str(), "Failed", true);
   }
 
   if (httpCode == HTTP_CODE_OK) {
@@ -343,29 +287,30 @@ void performOTA()
       size_t written = Update.writeStream(*stream);
 
       if (written == contentLength && Update.end()) {
-        Serial.println("[INFO] OTA update successful!");
+        consoleLog("OTA update successful!", 1);
         Serial.print("		From: ");
         Serial.println(currentSwVersion);
         Serial.print("		To: ");
         Serial.println(latestSwVersion);
         Serial.print("		Size: ");
         Serial.println(written);
-        Serial.println("[INFO] Restarting device in 10 seconds");
-        publishMessage(ota_status_topic.c_str(), "Updated", false);
+        consoleLog("Restarting device in 10 seconds", 1);
+        publishMessage(ota_status_topic.c_str(), "Updated", true);
         delay(10000);
         ESP.restart();
       } else {
-        Serial.println("[ERROR] OTA update failed.");
+        consoleLog("OTA update failed", 3);
         Update.printError(Serial);
-        publishMessage(ota_status_topic.c_str(), "Failed", false);
+        publishMessage(ota_status_topic.c_str(), "Failed", true);
       }
     } else {
-      Serial.println("[ERROR] Not enough space for OTA update.");
-      publishMessage(ota_status_topic.c_str(), "Failed", false);
+      consoleLog("Not enough space for OTA update", 3);
+      publishMessage(ota_status_topic.c_str(), "Failed", true);
     }
   } else {
     Serial.printf("[ERROR] HTTP request failed with code: %d\n", httpCode);
-    publishMessage(ota_status_topic.c_str(), "Failed", false);
+    consoleLog("OTA update failed", 3);
+    publishMessage(ota_status_topic.c_str(), "Failed", true);
   }
 
   http.end();
@@ -391,11 +336,11 @@ void updateFirmwareOTA(String msg)
 
   // Compare versions
   if (latestSwVersion != currentSwVersion) {
-    Serial.println("[INFO] Firmware update available! Starting OTA update");
+    consoleLog("Firmware update available! Starting OTA update", 1);
     performOTA();
   } else {
-    Serial.println("[INFO] Device firmware is up to date.");
-    publishMessage(ota_status_topic.c_str(), "Up to date", false);
+    consoleLog("Device firmware is up to date.", 1);
+    publishMessage(ota_status_topic.c_str(), "Up to date", true);
   }
 }
 
@@ -404,10 +349,12 @@ void requestParameters()
 {
   String requestPayload = String("{\"device\":\"") + deviceName + String("\"}");
   Serial.printf("[INFO] Publishing parameter request to MQTT: %s\n", requestPayload.c_str());
-  client.publish(parameter_request_topic, requestPayload.c_str());
+  client.publish(parameter_request_topic.c_str(), requestPayload.c_str());
 }
 
-String removeSpaces(String input) {
+// Remove white spaces from a String input
+String removeSpaces(String input) 
+{
   String output = "";
   for (int i = 0; i < input.length(); i++) {
     if (input[i] != ' ') {  
@@ -417,8 +364,8 @@ String removeSpaces(String input) {
   return output;
 }
 
-// Create discovery payload
-void publishMQTTDiscovery(String name, String deviceType,	String icon, String unitOfMeasurement, String deviceClass, String stateClass, String entityCategory, String stateTopic) 
+// Create sensor discovery payload
+void publishMQTTSensorDiscovery(String name, String deviceType,	String icon, String unitOfMeasurement, String deviceClass, String stateClass, String entityCategory, String stateTopic, int displayPrecision) 
 {
     // Construct IDs
     String uniqueID = String(deviceName) + "-" + removeSpaces(name);
@@ -452,10 +399,14 @@ void publishMQTTDiscovery(String name, String deviceType,	String icon, String un
     {
       doc["state_class"] = stateClass; 
     }
+    if(displayPrecision != -1)
+    {
+      doc["suggested_display_precision"] = displayPrecision; 
+    }
     doc["availability_topic"] = availability_topic;
     doc["payload_available"] = "connected";
     doc["payload_not_available"] = "connection lost";
-
+    
     // Add the device object
     JsonObject device = doc.createNestedObject("device");
     JsonArray identifiers = device.createNestedArray("identifiers");
@@ -482,65 +433,49 @@ void publishMQTTDiscovery(String name, String deviceType,	String icon, String un
 // Send discovery topics to Home Assistant
 void sendDiscoveries()
 {
-	publishMQTTDiscovery("Up Time", "sensor","mdi:clock", "h", "duration", "total_increasing", "diagnostic", uptime_topic);
-
-	publishMQTTDiscovery("OTA Status", "sensor", "mdi:update", "", "", "", "diagnostic", ota_status_topic);
-
-	publishMQTTDiscovery("Firmware Version", "sensor", "mdi:application-outline", "", "", "", "diagnostic", firmware_topic);
-
-	publishMQTTDiscovery("Error", "sensor", "mdi:alert-circle-outline", "", "", "", "diagnostic", log_error_topic);
-
-	publishMQTTDiscovery("Warning", "sensor", "mdi:shield-alert-outline", "", "", "", "diagnostic", log_warning_topic);
-
-	publishMQTTDiscovery("Info", "sensor", "mdi:information-outline", "", "", "", "diagnostic", log_info_topic);
-
-	publishMQTTDiscovery("IP Address", "sensor", "mdi:ip-network-outline", "", "", "", "diagnostic", ip_topic);
+  // Diagnostics
+  publishMQTTSensorDiscovery("Up Time", "sensor","mdi:clock", "h", "duration", "total_increasing", "diagnostic", uptime_topic, 0);
+  delay(100);
+	publishMQTTSensorDiscovery("OTA Status", "sensor", "mdi:update", "", "", "", "diagnostic", ota_status_topic, -1);
+  delay(100);
+	publishMQTTSensorDiscovery("Firmware Version", "sensor", "mdi:application-outline", "", "", "", "diagnostic", firmware_topic, -1);
+  delay(100);
+	publishMQTTSensorDiscovery("Error", "sensor", "mdi:alert-circle-outline", "", "", "", "diagnostic", log_error_topic, -1);
+  delay(100);
+	publishMQTTSensorDiscovery("Warning", "sensor", "mdi:shield-alert-outline", "", "", "", "diagnostic", log_warning_topic, -1);
+  delay(100);
+	publishMQTTSensorDiscovery("Info", "sensor", "mdi:information-outline", "", "", "", "diagnostic", log_info_topic, -1);
+  delay(100);
+	publishMQTTSensorDiscovery("IP Address", "sensor", "mdi:ip-network-outline", "", "", "", "diagnostic", ip_topic, -1);
+  delay(100);
+  publishMQTTSensorDiscovery("WiFi Strength", "sensor", "mdi-rss", "", "", "", "diagnostic", wifi_strength_topic, -1);
+  delay(100);
 }
 
-void printMQTTTopics()
+// Send back received parameters to the server
+void sendParameters()
 {
-  // Print used MQTT topics
-  Serial.println("MQTT Topic:");
-  Serial.println("    [availability_topic]: ");
-  Serial.println(String("       home/") + deviceName + String("/availability"));
-  Serial.println("    [ota_query_topic]: ");
-  Serial.println("        home/ota/query");
-  Serial.println("    [parameter_request_topic]: ");
-  Serial.println("        home/parameters/request");
-  Serial.println("    [parameter_response_topic]: ");
-  Serial.println(String("       home/") + deviceName + String("/parameters"));
-  Serial.println("    [ota_status_topic]");
-  Serial.println(String("       home/") + deviceName + String("/ota/status"));
-  Serial.println("    [ota_response_topic]");
-  Serial.println(String("       home/") + deviceName + String("/ota/response"));
-  Serial.println("    [log_info_topic]: ");
-  Serial.println(String("       home/") + deviceName + String("/log/info"));
-  Serial.println("    [log_warning_topic]");
-  Serial.println(String("       home/") + deviceName + String("/log/warning"));
-  Serial.println("    [log_error_topic]");
-  Serial.println(String("       home/") + deviceName + String("/log/error"));
-  Serial.println("    [command_topic]: ");
-  Serial.println(String("       home/") + deviceName + String("/command"));
+  publishMessage(glassweight_topic, glassWeight, true);
 }
 
-/************************** Setup ***********************************/
+/************************** Setup function ***********************************/
 
-void setup() {
-  delay(1000);  // Small delay before Serial.begin
+void setup(void)
+{
   Serial.begin(115200);
-  Serial.println("[INFO] Starting ESP32...");
 
-  // Connect to Wi-Fi
-  connectWifi();
+  // Connect to WiFi
+  wifiStatus = connectWifi();
 
-  // Connect to MQTT
+  // Set MQTT server and callback
   client.setServer(mqtt_server, mqtt_port);
   client.setCallback(mqttCallback);
   client.setBufferSize(4096);
-  connectMQTT();
+  client.setKeepAlive(120);
+  mqttStatus = connectMQTT();
 
   // Announce availability
-  publishMessage(availability_topic.c_str(), "connected", false);
+  publishMessage(availability_topic, "connected", true);
 
   // Query latest firmware version
   requestFirmwareVersion();
@@ -550,6 +485,15 @@ void setup() {
   requestParameters();
   delay(1000);
 
+  // Open MQTT connection to receive parameters
+  for (int i = 0; i <= 100; i++) {
+    client.loop();
+    delay(50);
+  }
+
+  // Verify received parameters
+  sendParameters();
+
   // Set OTA progress callback
   Update.onProgress([](unsigned int progress, unsigned int total) 
   {
@@ -557,18 +501,189 @@ void setup() {
     Serial.println();
   });
 
-  // Publish data to the server
-  publishMessage(firmware_topic.c_str(), currentSwVersion, false);
-  publishMessage(log_info_topic.c_str(), "Starting main loop", false);
-  publishMessage(ip_topic.c_str(), configurationUrl, false);
-
+  // Publish diagnostic data to the server
+  publishMessage(firmware_topic, currentSwVersion, true);
+  publishMessage(log_info_topic, "Starting main loop", false);
+  publishMessage(ip_topic, configurationUrl, true);
 }
 
-/************************** Main Loop ***********************************/
+/************************** Main loop ***********************************/
 
-void loop() {
-  if (!client.connected()) {
-    connectMQTT();
+void loop(void)
+{
+  // Store the current computer time
+  unsigned long currentMillis = millis();
+
+  // Update connection status
+  wifiStatus = (WiFi.status() == WL_CONNECTED);
+  mqttStatus = client.connected();
+
+  // Frequent WiFi reconnect attempt
+  if (!wifiStatus && (currentMillis - previousMillisWiFi >= wifiReconnectInterval)) 
+  {
+      previousMillisWiFi = currentMillis;
+      Serial.println("[WARNING] WiFi Disconnected! Attempting to reconnect...");
+      
+      if (connectWifi())  
+      { 
+          Serial.println("[WARNING] WiFi Reconnected!");
+          wifiReconnectInterval = 5000;  // Reset to 5s
+      }
+      else
+      { 
+          wifiReconnectInterval = min(wifiReconnectInterval * 2, wifiRetryMaxInterval); // Exponential backoff
+      }
   }
+
+  // Frequent MQTT reconnect attempt
+  if (!mqttStatus && (currentMillis - previousMillisMQTT >= mqttReconnectInterval)) 
+  {
+      previousMillisMQTT = currentMillis;
+      Serial.println("[WARNING] MQTT Disconnected! Attempting to reconnect...");
+      
+      if (connectMQTT())  
+      { 
+          Serial.println("[WARNING] MQTT Reconnected!");
+          mqttReconnectInterval = 5000;  // Reset to 5s
+      }
+      else
+      { 
+          mqttReconnectInterval = min(mqttReconnectInterval * 2, mqttRetryMaxInterval); // Exponential backoff
+      }
+  }
+  
   client.loop();
+
+  // Standby loop
+  if (currentMillis - previousMillis1 >= period1) 
+  { 
+    previousMillis1 = currentMillis;
+  }
+
+  // Add delay to the loop
+  delay(200);
+}
+
+/************************** Device Functions ***********************************/
+
+void consoleLog(String consoleText, int logLevel)
+{
+    switch (logLevel) 
+    {
+      case 1:
+        Serial.print("[INFO] ");  
+        publishMessage(log_info_topic, consoleText, false);
+        break;
+      case 2:
+        Serial.print("[WARNING] ");
+        publishMessage(log_warning_topic, consoleText, false);
+        break;
+      case 3:
+        Serial.print("[ERROR] ");
+        publishMessage(log_error_topic, consoleText, false);
+        break;
+      default:
+        consoleLog("Unknown log warning level", 2);
+        break;
+    }
+
+    Serial.println(consoleText);
+}
+
+bool connectWifi()
+{
+  int attempts = 1;
+  
+  // Connect to WiFi network
+  WiFi.begin(WIFI_SSID, WIFI_PASS);
+
+  // Wait for connection
+  while (WiFi.status() != WL_CONNECTED) {
+    attempts = attempts + 1;
+    delay(500);
+    Serial.print(".");
+
+    if(attempts == 50){
+      // Failed to connect
+      Serial.println("Failed to connect to WiFi");
+      return false;
+    }
+  }
+  
+  configurationUrl = WiFi.localIP().toString();
+
+  Serial.println("");
+  Serial.print("Connected to ");
+  Serial.println(WIFI_SSID);
+  Serial.print("IP address: ");
+  Serial.println(WiFi.localIP());
+
+  return true;
+}
+
+void restartESP()
+{
+  consoleLog("Rebooting ESP32 device", 1);
+  delay(5000);
+  esp_restart();
+}
+
+// Handle commands received via MQTT
+void handleCommands(String message) 
+{ 
+  if (message == "reboot") 
+  {
+    consoleLog("Command received: Reboot", 1);
+    restartESP();
+  }
+   else if (message == "request parameters") 
+  {
+    consoleLog("Command received: Parameter Request", 1);
+    requestParameters();
+  }
+  else if (message == "send parameters") 
+  {
+    consoleLog("Command received: Parameter Send", 1);
+    sendParameters();
+  }
+  else if (message == "send discoveries") 
+  {
+    consoleLog("Command received: Discovery Send", 1);
+    sendDiscoveries();
+  }
+  else 
+  {
+    consoleLog("Unknown command received", 2);
+  }
+}
+
+// Handle parameters received via MQTT
+void handleParameters(const String& jsonPayload) 
+{
+    // Create a JSON document (adjust size if needed)
+    StaticJsonDocument<1024> doc;
+
+    // Deserialize the JSON
+    DeserializationError error = deserializeJson(doc, jsonPayload);
+    if (error) {
+        consoleLog("Parameter JSON parsing failed: ", 2);
+        Serial.println(error.c_str());
+        return;
+    }
+
+    // Check if all expected parameters exist before assigning values
+    if (!doc.containsKey("glassWeight"))
+    {
+        consoleLog("Missing one or more required parameters", 2);
+        return;
+    }
+
+    // Extract values
+    glassWeight = doc["glassWeight"].as<int>();
+
+    // Print extracted values
+    Serial.println("  Extracted Parameters:");
+    Serial.print("    glassWeight: "); Serial.println(glassWeight);
+
+    consoleLog("Parameters received and saved", 1);
 }
