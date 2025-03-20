@@ -738,11 +738,11 @@ void setup(void)
   ledcAttachPin(ledPin, ledChannel);
   ledcWrite(ledChannel, dutyCycleLED);
 
-  // Calibrate scale
-  if(!debugMode){calibrateScale(glassWeight);}
-
   // Home Z axis
   if(!debugMode){stepperHoming();}
+
+  // Calibrate scale
+  if(!debugMode){calibrateScale(glassWeight);}
 
   // Start activity timer
   activityMillis = millis();
