@@ -809,7 +809,7 @@ void loop(void)
   // checkPushButton();
 
   // Standby loop
-  if (currentMillis - previousMillis1 >= period1) 
+  if (!sleepMode && currentMillis - previousMillis1 >= period1) 
   { 
       previousMillis1 = currentMillis;
       
