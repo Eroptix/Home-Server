@@ -33,31 +33,52 @@ String  latestSwVersion;
 bool debugMode = false;
 
 // Pin layout
-/*                             +-----------------------+
+/*  ESP32                      +-----------------------+
                                | O                   O |
                                |                       |
                           3.3V | [ ]               [ ] | GND
-                            EN | [ ]  ___________  [ ] | GPIO23  LOADDOUT
-               BUTTON   GPIO36 | [ ] |           | [ ] | GPIO22  LOADCLK
-                LIMIT   GPIO39 | [ ] |           | [ ] | GPIO01
-                  LED   GPIO34 | [ ] |           | [ ] | GPIO03
-               WEIGHT   GPIO35 | [ ] |           | [ ] | GPIO21  LED
-              PELTIER   GPIO32 | [ ] |           | [ ] | GND
-                  DIR   GPIO33 | [ ] |           | [ ] | GPIO19  PUMP1
-                 STEP   GPIO25 | [ ] |___________| [ ] | GPIO18  PUMP2
-                  SLP   GPIO26 | [ ]               [ ] | GPIO05  PUMP3
-                  RST   GPIO27 | [ ]               [ ] | GPIO17  PUMP4
-             LOADDOUT   GPIO14 | [ ]               [ ] | GPIO16  PUMP5
-              LOADCLK   GPIO12 | [ ]               [ ] | GPIO04  PUMP6
-                           GND | [ ]               [ ] | GPIO00  FAN
-                   EN   GPIO13 | [ ]               [ ] | GPIO02  MOTOR
-                        GPIO09 | [ ]               [ ] | GPIO15  WEIGHT
+                            EN | [ ]  ___________  [ ] | GPIO23  
+                        GPIO36 | [ ] |           | [ ] | GPIO22  
+                        GPIO39 | [ ] |           | [ ] | GPIO01
+                        GPIO34 | [ ] |           | [ ] | GPIO03
+                        GPIO35 | [ ] |           | [ ] | GPIO21  
+                        GPIO32 | [ ] |           | [ ] | GND
+                        GPIO33 | [ ] |           | [ ] | GPIO19  
+                        GPIO25 | [ ] |___________| [ ] | GPIO18  
+                        GPIO26 | [ ]               [ ] | GPIO05  
+                        GPIO27 | [ ]               [ ] | GPIO17  
+                        GPIO14 | [ ]               [ ] | GPIO16  
+                        GPIO12 | [ ]               [ ] | GPIO04  
+                           GND | [ ]               [ ] | GPIO00  
+                        GPIO13 | [ ]               [ ] | GPIO02  
+                        GPIO09 | [ ]               [ ] | GPIO15  
                         GPIO10 | [ ]               [ ] | GPIO08
                         GPIO11 | [ ]               [ ] | GPIO07
                             5V | [ ]               [ ] | GPIO06
                                |        -------        |
                                | O      | USB |      O |
                                +-----------------------+         */
+
+/*  MCP23017                  +--------------+
+                              | O          O |
+                              |              |
+                         GPB0 | [ ]      [ ] | GPA7
+                         GPB1 | [ ]      [ ] | GPA6  
+                         GPB2 | [ ]      [ ] | GPA5  
+                         GPB3 | [ ]      [ ] | GPA4
+                         GPB4 | [ ]      [ ] | GPA3
+                         GPB5 | [ ]      [ ] | GPA2  
+                         GPB6 | [ ]      [ ] | GPA1
+                         GPB7 | [ ]      [ ] | GPA0  
+                          Vdd | [ ]      [ ] | INTA  
+                          Vss | [ ]      [ ] | INTB  
+                           NC | [ ]      [ ] | RESET  
+                          SCL | [ ]      [ ] | A2  
+                          SDA | [ ]      [ ] | A1  
+                           NC | [ ]      [ ] | A0  
+                              |              |
+                              | O          O |
+                              +--------------+         */
                                
 const int pumpOnePin = 19;
 const int pumpTwoPin = 18;
