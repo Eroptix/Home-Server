@@ -30,7 +30,7 @@
 
 // Device-specific settings
 const char* deviceName = "smartender";
-const char* currentSwVersion = "1.1.0";
+const char* currentSwVersion = "1.1.1";
 const char* deviceModel = "ESP32-NodeMCU";
 const char* deviceManufacturer = "BTM Engineering";
 String configurationUrl = "";
@@ -806,7 +806,7 @@ void loop(void)
   client.loop();
 
   // Check button state
-  // checkPushButton();
+  checkPushButton();
 
   // Standby loop
   if (!sleepMode && currentMillis - previousMillis1 >= period1) 

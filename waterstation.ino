@@ -16,6 +16,8 @@
 #include <Update.h>
 #include <ArduinoJson.h>
 #include <PubSubClient.h>
+#include <HCSR04.h>
+#include <SharpIR.h>
 
 #define WIFI_SSID "UPC8F21BEF"
 #define WIFI_PASS "k7pp3aexkmQh"
@@ -124,6 +126,8 @@ unsigned long wifiRetryMaxInterval = 30000;         // 30 seconds max
 unsigned long mqttRetryMaxInterval = 60000;         // 60 seconds max 
 bool wifiStatus = false;                            // WiFi status indicator
 long wifiStrength;                                  // WiFi strength value 
+
+SharpIR sensor( SharpIR::GP2Y0A41SK0F, pinIRS );
 
 /************************** HomeAssistant Settings ***********************************/
 
@@ -555,6 +559,16 @@ void setup(void)
 {
   Serial.begin(115200);
 
+  // Initialize pins
+  pinMode(pinHighSwitch, INPUT);
+  pinMode(pinIRS, INPUT);
+  pinMode(pinTrigger, INPUT);
+  pinMode(pinEcho, INPUT);
+  pinMode(pinPump, OUTPUT);
+
+  // Initalize ultrasonic sensor
+  HCSR04.begin(pinTrigger, pinEcho);
+
   // Connect to WiFi
   wifiStatus = connectWifi();
 
@@ -840,4 +854,85 @@ void led(bool state)
     }
 
     publishMessage(led_topic, statusLED ? "ON" : "OFF", false); 
+}
+
+double readLevelUltrasonic (int numAvg)
+{
+  double* distances;
+  double distance;
+  double sumDistance;
+
+  for (int i = 0; i < numAvg; ++i) 
+  {
+    distances = HCSR04.measureDistanceCm();
+    distance = distances[0];
+    sumDistance = sumDistance + distance;
+    delay(100);
+  }
+  
+  distance = calibUsB * (sumDistance/numAvg) + calibUsA;
+  
+  Serial.print("Ultrasonic distance: ");
+  Serial.print(distance);
+  Serial.println(" cm");
+  
+  return distance;
+}
+
+double readLevelInfrared (int numAvg)
+{
+  double distance;
+  double sumDistance;
+
+  for (int i = 0; i < numAvg; ++i) 
+  {
+    distance = sensor.getDistance();
+    sumDistance = sumDistance + distance;
+    delay(100);
+  }
+  
+  distance = calibIrB * (sumDistance/numAvg) + calibIrA;
+
+  Serial.print("Infrared distance: ");
+  Serial.print(distance);
+  Serial.println(" cm");
+  
+  return distance;
+}
+
+bool readFloatSensor ()
+{
+  int switchState = digitalRead(pinHighSwitch);
+
+  Serial.print("Safety switch: ");
+  Serial.println(switchState);
+
+  return switchState;
+}
+
+double calculateLevel(double curWaterLevelIR, double curWaterLevelUS)
+{ 
+  bool correctUS = true;
+  bool correctIR = true;
+  
+  // Compare level reading from previous cycle
+  if ((curWaterLevelUS - prevWaterLevelUS)>10)
+  {
+	consoleLog("	[ERROR] Inconsistent US water level reading from previous cycle"); 
+	correctUS = false;
+  } 
+  if ((curWaterLevelIR - prevWaterLevelIR)>10)
+  {
+	consoleLog("	[ERROR] Inconsistent IR water level reading from previous cycle");
+	correctIR = false;
+  } 
+  
+  // Compare level readings from sensors
+  if ((curWaterLevelUS - curWaterLevelIR)>10)
+  {
+	consoleLog("	[ERROR] Inconsistent water level reading from sensors");  
+  } 
+    
+  // Save readings for the next cycle
+  prevWaterLevelUS = curWaterLevelUS;
 }
