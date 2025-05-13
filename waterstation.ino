@@ -38,16 +38,16 @@ bool debugMode = false;
                                |                       |
                           3.3V | [ ]               [ ] | GND
                             EN | [ ]  ___________  [ ] | GPIO23  
-                        GPIO36 | [ ] |           | [ ] | GPIO22  
+                        GPIO36 | [ ] |           | [ ] | GPIO22 SCL 
                         GPIO39 | [ ] |           | [ ] | GPIO01
                         GPIO34 | [ ] |           | [ ] | GPIO03
-                        GPIO35 | [ ] |           | [ ] | GPIO21  
+                        GPIO35 | [ ] |           | [ ] | GPIO21 SDA 
                         GPIO32 | [ ] |           | [ ] | GND
                         GPIO33 | [ ] |           | [ ] | GPIO19  
                         GPIO25 | [ ] |___________| [ ] | GPIO18  
                         GPIO26 | [ ]               [ ] | GPIO05  
-                        GPIO27 | [ ]               [ ] | GPIO17  
-                        GPIO14 | [ ]               [ ] | GPIO16  
+                        GPIO27 | [ ]               [ ] | GPIO17 INTA 
+                        GPIO14 | [ ]               [ ] | GPIO16 INTB 
                         GPIO12 | [ ]               [ ] | GPIO04  
                            GND | [ ]               [ ] | GPIO00  
                         GPIO13 | [ ]               [ ] | GPIO02  
@@ -59,16 +59,22 @@ bool debugMode = false;
                                | O      | USB |      O |
                                +-----------------------+         */
 
+ // Outputs                              
+
+// Inputs
+const int intA = 17;
+const int intB = 16;
+
 /*  MCP23017                  +--------------+
                               | O          O |
                               |              |
-                         GPB0 | [ ]      [ ] | GPA7
-                         GPB1 | [ ]      [ ] | GPA6  
-                         GPB2 | [ ]      [ ] | GPA5  
-                         GPB3 | [ ]      [ ] | GPA4
-                         GPB4 | [ ]      [ ] | GPA3
-                         GPB5 | [ ]      [ ] | GPA2  
-                         GPB6 | [ ]      [ ] | GPA1
+                   SOIL1 GPB0 | [ ]      [ ] | GPA7 PUMP1
+                   SOIL2 GPB1 | [ ]      [ ] | GPA6 PUMP2 
+                   SOIL3 GPB2 | [ ]      [ ] | GPA5 LED 
+                    ECHO GPB3 | [ ]      [ ] | GPA4 FAN
+               IR SENSOR GPB4 | [ ]      [ ] | GPA3 TRIGGER
+                LIMIT UP GPB5 | [ ]      [ ] | GPA2  
+              LIMIT DOWN GPB6 | [ ]      [ ] | GPA1
                          GPB7 | [ ]      [ ] | GPA0  
                           Vdd | [ ]      [ ] | INTA  
                           Vss | [ ]      [ ] | INTB  
@@ -79,14 +85,22 @@ bool debugMode = false;
                               |              |
                               | O          O |
                               +--------------+         */
-                               
-const int pumpOnePin = 19;
-const int pumpTwoPin = 18;
-const int pumpThreePin = 5;
-const int pumpFourPin = 17;
-const int ledPin = 21;
-const int buttonPin = 36;
-const int fanPin = 0;
+
+// Outputs                              
+const int pumpOnePin = 7;
+const int pumpTwoPin = 6;
+const int ledPin = 5;
+const int fanPin = 4;
+const int UStrigger = 3;
+
+// Inputs
+const int soilOnePin = 8;
+const int soilTwoPin = 9;
+const int soilThreePin = 10;
+const int USecho = 11;
+const int IRsensor = 12;
+const int limitUp = 13;
+const int limitDown = 14;
 
 // Status indicators
 bool pumpStatus[] = {true, false, false, false, false, false, false};
@@ -96,7 +110,7 @@ bool statusLED = false;
 bool statusFan = true;
 
 // Pump pin layout
-int pumpPin[] = {99, pumpOnePin, pumpTwoPin, pumpThreePin, pumpFourPin, pumpFivePin, pumpSixPin};
+int pumpPin[] = {99, pumpOnePin, pumpTwoPin, 99, 99, 99, 99};
   
 // Refresh loop parameters
 int refreshRate = 5;                                // Measurement loop length
@@ -140,7 +154,11 @@ String wifi_strength_topic =                String("home/") + deviceName + Strin
 String pump1_topic =                        String("home/") + deviceName + String("/pumps/pump1");
 String pump2_topic =                        String("home/") + deviceName + String("/pumps/pump2");
 String led_topic =                          String("home/") + deviceName + String("/led");
-String moisture_meter_topic =               String("home/") + deviceName + String("/moisture");
+String IRsensor_topic =                     String("home/") + deviceName + String("/IRsensor");
+String USsensor_topic =                     String("home/") + deviceName + String("/USsensor");
+String soil1_topic =                        String("home/") + deviceName + String("/moisture/soil1");
+String soil2_topic =                        String("home/") + deviceName + String("/moisture/soil1");
+String soil3_topic =                        String("home/") + deviceName + String("/moisture/soil1");
 
 // Initalize the Mqtt client instance
 WiFiClient espClient;
