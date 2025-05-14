@@ -18,6 +18,7 @@
 #include <PubSubClient.h>
 #include <HCSR04.h>
 #include <SharpIR.h>
+#include <Adafruit_MCP23017.h>
 
 #define WIFI_SSID "UPC8F21BEF"
 #define WIFI_PASS "k7pp3aexkmQh"
@@ -40,7 +41,7 @@ bool debugMode = false;
                                |                       |
                           3.3V | [ ]               [ ] | GND
                             EN | [ ]  ___________  [ ] | GPIO23  
-                        GPIO36 | [ ] |           | [ ] | GPIO22 SCL 
+              IR SENSOR GPIO36 | [ ] |           | [ ] | GPIO22 SCL 
                         GPIO39 | [ ] |           | [ ] | GPIO01
                         GPIO34 | [ ] |           | [ ] | GPIO03
                         GPIO35 | [ ] |           | [ ] | GPIO21 SDA 
@@ -48,11 +49,11 @@ bool debugMode = false;
                         GPIO33 | [ ] |           | [ ] | GPIO19  
                         GPIO25 | [ ] |___________| [ ] | GPIO18  
                         GPIO26 | [ ]               [ ] | GPIO05  
-                        GPIO27 | [ ]               [ ] | GPIO17 INTA 
-                        GPIO14 | [ ]               [ ] | GPIO16 INTB 
+                        GPIO27 | [ ]               [ ] | GPIO17 ECHO 
+                   INTB GPIO14 | [ ]               [ ] | GPIO16 TRIGGER 
                         GPIO12 | [ ]               [ ] | GPIO04  
                            GND | [ ]               [ ] | GPIO00  
-                        GPIO13 | [ ]               [ ] | GPIO02  
+                   INTA GPIO13 | [ ]               [ ] | GPIO02  
                         GPIO09 | [ ]               [ ] | GPIO15  
                         GPIO10 | [ ]               [ ] | GPIO08
                         GPIO11 | [ ]               [ ] | GPIO07
@@ -61,11 +62,14 @@ bool debugMode = false;
                                | O      | USB |      O |
                                +-----------------------+         */
 
- // Outputs                              
+// Outputs 
+const int UStriggerPin = 16;                            
 
 // Inputs
-const int intA = 17;
-const int intB = 16;
+const int intAPin = 17;
+const int intBPin = 16;
+const int USechoPin = 17;
+const int IRsensorPin = 36; 
 
 /*  MCP23017                  +--------------+
                               | O          O |
@@ -73,10 +77,10 @@ const int intB = 16;
                    SOIL1 GPB0 | [ ]      [ ] | GPA7 PUMP1
                    SOIL2 GPB1 | [ ]      [ ] | GPA6 PUMP2 
                    SOIL3 GPB2 | [ ]      [ ] | GPA5 LED 
-                    ECHO GPB3 | [ ]      [ ] | GPA4 FAN
-               IR SENSOR GPB4 | [ ]      [ ] | GPA3 TRIGGER
-                LIMIT UP GPB5 | [ ]      [ ] | GPA2  
-              LIMIT DOWN GPB6 | [ ]      [ ] | GPA1
+                LIMIT UP GPB3 | [ ]      [ ] | GPA4 FAN
+              LIMIT DOWN GPB4 | [ ]      [ ] | GPA3 
+                         GPB5 | [ ]      [ ] | GPA2  
+                         GPB6 | [ ]      [ ] | GPA1
                          GPB7 | [ ]      [ ] | GPA0  
                           Vdd | [ ]      [ ] | INTA  
                           Vss | [ ]      [ ] | INTB  
@@ -93,16 +97,13 @@ const int pumpOnePin = 7;
 const int pumpTwoPin = 6;
 const int ledPin = 5;
 const int fanPin = 4;
-const int UStrigger = 3;
 
 // Inputs
 const int soilOnePin = 8;
 const int soilTwoPin = 9;
 const int soilThreePin = 10;
-const int USecho = 11;
-const int IRsensor = 12;
-const int limitUp = 13;
-const int limitDown = 14;
+const int limitUpPin = 13;
+const int limitDownPin = 14;
 
 // Status indicators
 bool pumpStatus[] = {true, false, false, false, false, false, false};
@@ -127,7 +128,8 @@ unsigned long mqttRetryMaxInterval = 60000;         // 60 seconds max
 bool wifiStatus = false;                            // WiFi status indicator
 long wifiStrength;                                  // WiFi strength value 
 
-SharpIR sensor( SharpIR::GP2Y0A41SK0F, pinIRS );
+SharpIR sensor( SharpIR::GP2Y0A41SK0F, IRsensorPin );
+Adafruit_MCP23017 mcp;
 
 /************************** HomeAssistant Settings ***********************************/
 
@@ -560,14 +562,31 @@ void setup(void)
   Serial.begin(115200);
 
   // Initialize pins
-  pinMode(pinHighSwitch, INPUT);
-  pinMode(pinIRS, INPUT);
-  pinMode(pinTrigger, INPUT);
-  pinMode(pinEcho, INPUT);
-  pinMode(pinPump, OUTPUT);
+  pinMode(intAPin, INPUT);
+  pinMode(intBPin, INPUT);
+  pinMode(IRsensorPin, INPUT);
+  pinMode(USechoPin, INPUT);
+  pinMode(UStriggerPin, OUTPUT);
+
+  // Initialize I2C and MCP23017
+  mcp.begin(0); // 0 = address 0x20 (A0-A2 = GND)
+
+  // Initialize MCP23017 pins
+  mcp.pinMode(pumpOnePin, OUTPUT);
+  mcp.pinMode(pumpTwoPin, OUTPUT);
+  mcp.pinMode(ledPin, OUTPUT);
+  mcp.pinMode(fanPin, OUTPUT);
+
+  mcp.pinMode(soilOnePin, INPUT);
+  mcp.pinMode(soilTwoPin, INPUT);
+  mcp.pinMode(soilThreePin, INPUT);
+  mcp.pinMode(limitUp, INPUT);
+  mcp.pinMode(limitDown, INPUT);
+
+  //mcp.pullUp(1, HIGH);
 
   // Initalize ultrasonic sensor
-  HCSR04.begin(pinTrigger, pinEcho);
+  HCSR04.begin(UStriggerPin, USechoPin);
 
   // Connect to WiFi
   wifiStatus = connectWifi();
@@ -856,47 +875,47 @@ void led(bool state)
     publishMessage(led_topic, statusLED ? "ON" : "OFF", false); 
 }
 
-double readLevelUltrasonic (int numAvg)
+double readLevelUltrasonic(int numAvg)
 {
-  double* distances;
-  double distance;
-  double sumDistance;
+  double sumDistance = 0.0;
 
   for (int i = 0; i < numAvg; ++i) 
   {
-    distances = HCSR04.measureDistanceCm();
-    distance = distances[0];
-    sumDistance = sumDistance + distance;
+    double* distances = HCSR04.measureDistanceCm();  // Assuming library returns pointer
+    if (distances != nullptr) {
+      sumDistance += distances[0];
+    }
     delay(100);
   }
-  
-  distance = calibUsB * (sumDistance/numAvg) + calibUsA;
-  
+
+  double average = sumDistance / numAvg;
+  double distance = calibUsB * average + calibUsA;
+
   Serial.print("Ultrasonic distance: ");
   Serial.print(distance);
   Serial.println(" cm");
-  
+
   return distance;
 }
 
-double readLevelInfrared (int numAvg)
+double readLevelInfrared(int numAvg)
 {
-  double distance;
-  double sumDistance;
+  double sumDistance = 0.0;
 
   for (int i = 0; i < numAvg; ++i) 
   {
-    distance = sensor.getDistance();
-    sumDistance = sumDistance + distance;
+    double reading = sensor.getDistance();
+    sumDistance += reading;
     delay(100);
   }
-  
-  distance = calibIrB * (sumDistance/numAvg) + calibIrA;
+
+  double average = sumDistance / numAvg;
+  double distance = calibIrB * average + calibIrA;
 
   Serial.print("Infrared distance: ");
   Serial.print(distance);
   Serial.println(" cm");
-  
+
   return distance;
 }
 
@@ -910,29 +929,47 @@ bool readFloatSensor ()
   return switchState;
 }
 
-double calculateLevel(double curWaterLevelIR, double curWaterLevelUS)
-{ 
-  bool correctUS = true;
-  bool correctIR = true;
-  
-  // Compare level reading from previous cycle
-  if ((curWaterLevelUS - prevWaterLevelUS)>10)
-  {
-	consoleLog("	[ERROR] Inconsistent US water level reading from previous cycle"); 
-	correctUS = false;
-  } 
-  if ((curWaterLevelIR - prevWaterLevelIR)>10)
-  {
-	consoleLog("	[ERROR] Inconsistent IR water level reading from previous cycle");
-	correctIR = false;
-  } 
-  
-  // Compare level readings from sensors
-  if ((curWaterLevelUS - curWaterLevelIR)>10)
-  {
-	consoleLog("	[ERROR] Inconsistent water level reading from sensors");  
-  } 
-    
-  // Save readings for the next cycle
-  prevWaterLevelUS = curWaterLevelUS;
+double getWaterLevel(int numAvg)
+{
+  const double minValid = 5.0;   // cm
+  const double maxValid = 50.0;  // cm
+  const double maxDiff = 5.0;    // max allowed diff between sensors
+  const double maxJump = 10.0;   // max allowed jump from previous reading
+
+  static double prevLevel = -1.0;
+
+  double ir = readLevelInfrared(numAvg);
+  double us = readLevelUltrasonic(numAvg);
+
+  bool irValid = (ir >= minValid && ir <= maxValid);
+  bool usValid = (us >= minValid && us <= maxValid);
+
+  double level = -1.0;
+
+  if (irValid && usValid) {
+    if (abs(ir - us) <= maxDiff) {
+      level = (ir + us) / 2.0;
+    } else {
+      Serial.println("⚠️ Sensor mismatch! Using ultrasonic as primary.");
+      level = us;
+    }
+  } else if (usValid) {
+    level = us;
+  } else if (irValid) {
+    level = ir;
+  } else {
+    Serial.println("❌ Both sensor readings are invalid.");
+    return prevLevel >= 0 ? prevLevel : -1.0;
+  }
+
+  // Compare with previous level
+  if (prevLevel >= 0 && abs(level - prevLevel) > maxJump) {
+    Serial.println("⚠️ Sudden jump detected, using previous level instead.");
+    return prevLevel;
+  }
+
+  prevLevel = level;
+  return level;
 }
+
+
