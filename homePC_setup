@@ -1,0 +1,820 @@
+# --------------------------------------------------------
+# 
+# 				Home Server Setup Guide
+# 
+# --------------------------------------------------------
+
+# Update and upgrade Raspberry Pi
+sudo apt update
+sudo apt upgrade
+sudo apt autoremove
+
+# --------------------------------------------------------
+# 	Docker Install
+# -------------------------------------------------------- 
+
+# Download and run Docker install script
+curl -sSL https://get.docker.com | sh
+
+# Add current user to Docker group
+sudo usermod -aG docker $USER
+
+# Relog from session
+logout
+
+# Verify that the docker group has been successfully added
+groups
+
+# Test Docker installation
+docker run hello-world
+
+# --------------------------------------------------------
+# 	Portainer Install
+# -------------------------------------------------------- 
+
+# Pull the latest version of Portainer
+sudo docker pull portainer/portainer-ce:latest
+
+# Create Portainer container
+sudo docker run 
+	-p 9000:9000 
+	--name=portainer 
+	--restart=always 
+	-v /var/run/docker.sock:/var/run/docker.sock 
+	-v portainer_data:/data 
+	-d portainer/portainer-ce:latest
+
+# Username: admin
+# Password: iW^&bd8GN9qAe9o
+	
+# --------------------------------------------------------
+# 	Thingsboard Install
+# -------------------------------------------------------- 
+
+# Create Thingsboard container
+docker run\
+	--name thingsboard \
+	--restart always \
+	-p 8080:9090 \
+	-p 1883:1883 \
+	-p 7070:7070 \
+	-p 5683-5688:5683-5688/udp \
+	-e TB_QUEUE_TYPE=in-memory \
+	-v /home/pi/thingsboard/data:/data \
+	-v /home/pi/thingsboard/log:/var/log/thingsboard \
+	-d thingsboard/tb-postgres
+
+
+# Change permissions of the volumes for editing
+sudo chmod -R 755 /mnt/ssd/immich/
+sudo chown -R 1000 /mnt/ssd/immich/
+
+# Set default permission for Thingsboard: rwx------ 799
+sudo chmod -R 700 /home/pi/thingsboard
+sudo chown -R 1000 /home/pi/thingsboard
+
+sudo chown -R botamas:botamas /home/pi/thingsboard/data /home/pi/thingsboard/log
+
+# Username: tenant@thingsboard.org
+# Password: tenant
+
+# Setup Thingsboard API
+http://192.168.0.241:8080/swagger-ui.html
+
+# Set token expiry time max in sysadmin account settings
+
+# Get token 
+curl -X POST --header 'Content-Type: application/json' --header 'Accept: application/json' -d '{"username":"tenant@thingsboard.org", "password":"tenant"}' 'http://192.168.0.241:8080/api/auth/login'
+# Token: eyJhbGciOiJIUzUxMiJ9.eyJzdWIiOiJ0ZW5hbnRAdGhpbmdzYm9hcmQub3JnIiwidXNlcklkIjoiOGI5ZmI0NzAtYTFlYi0xMWVlLWJjYjMtOTViODJiNzM4YjY0Iiwic2NvcGVzIjpbIlRFTkFOVF9BRE1JTiJdLCJzZXNzaW9uSWQiOiJjMjJmNjc4ZS01OTkxLTQ3YjUtYTNkNy0yMTI3YzExYmUyMDciLCJpc3MiOiJ0aGluZ3Nib2FyZC5pbyIsImlhdCI6MTcwNDgzMjQ2MiwiZXhwIjoyNjA0ODMyNDYyLCJlbmFibGVkIjp0cnVlLCJpc1B1YmxpYyI6ZmFsc2UsInRlbmFudElkIjoiOGIxNTAwYTAtYTFlYi0xMWVlLWJjYjMtOTViODJiNzM4YjY0IiwiY3VzdG9tZXJJZCI6IjEzODE0MDAwLTFkZDItMTFiMi04MDgwLTgwODA4MDgwODA4MCJ9.b_5LqcEs5h8C_6YXeGlrRVopq2_In4wyMUU1F8hpjRT8WhMIuH5pVIMElLa77ORSew5L1OYmQa_hVivuwYE58Q"
+
+# Check HTTP API
+curl -v -X GET http://192.168.0.241:8080/api/plugins/telemetry/DEVICE/bb88e600-a23d-11ee-b70e-cff9d776d382/values/attributes?keys=tempGoal \
+--header "Content-Type:application/json" \
+--header "X-Authorization: Bearer eyJhbGciOiJIUzUxMiJ9.eyJzdWIiOiJ0ZW5hbnRAdGhpbmdzYm9hcmQub3JnIiwidXNlcklkIjoiOGI5ZmI0NzAtYTFlYi0xMWVlLWJjYjMtOTViODJiNzM4YjY0Iiwic2NvcGVzIjpbIlRFTkFOVF9BRE1JTiJdLCJzZXNzaW9uSWQiOiJjMjJmNjc4ZS01OTkxLTQ3YjUtYTNkNy0yMTI3YzExYmUyMDciLCJpc3MiOiJ0aGluZ3Nib2FyZC5pbyIsImlhdCI6MTcwNDgzMjQ2MiwiZXhwIjoyNjA0ODMyNDYyLCJlbmFibGVkIjp0cnVlLCJpc1B1YmxpYyI6ZmFsc2UsInRlbmFudElkIjoiOGIxNTAwYTAtYTFlYi0xMWVlLWJjYjMtOTViODJiNzM4YjY0IiwiY3VzdG9tZXJJZCI6IjEzODE0MDAwLTFkZDItMTFiMi04MDgwLTgwODA4MDgwODA4MCJ9.b_5LqcEs5h8C_6YXeGlrRVopq2_In4wyMUU1F8hpjRT8WhMIuH5pVIMElLa77ORSew5L1OYmQa_hVivuwYE58Q"
+
+
+curl -v -X GET http://192.168.0.241:1880/api/telemetry/test
+
+# --------------------------------------------------------
+# 	HomePage Install
+# -------------------------------------------------------- 
+docker run --name homepage \
+  -e PUID=1000 \
+  -e PGID=1000 \
+  -p 3600:3600 \
+  -v /home/pi/homepage/config:/app/config \
+  -v /home/pi/homepage/icons:/app/icons \
+  -v /home/pi/homepage/images:/app/images \
+  -v /var/run/docker.sock:/var/run/docker.sock:ro \
+  --restart unless-stopped \
+  ghcr.io/gethomepage/homepage:latest
+  
+# --------------------------------------------------------
+# 	Home Assistant Install
+# -------------------------------------------------------- 
+
+# Create Home Assistant container
+docker run -d \
+  --name=homeassistant \
+  --net=host \
+  -e PUID=1000 \
+  -e PGID=1000 \
+  -e TZ=Etc/UTC \
+  -p 8123:8123 \
+  -v /home/pi/homeassistant/config:/config \
+  --restart unless-stopped \
+  lscr.io/linuxserver/homeassistant:latest
+
+# Create Home Assistant container (Docker Compose)   
+version: '3'
+services:
+  homeassistant:
+    container_name: homeassistant
+    image: "ghcr.io/home-assistant/home-assistant:stable"
+    environment:
+      - DISABLE_JEMALLOC=true
+      - PUID=1000
+      - PGID=1000
+    volumes:
+      - /home/pi/homeassistant/config:/config
+      - /etc/localtime:/etc/localtime:ro
+      - /run/dbus:/run/dbus:ro
+    restart: unless-stopped
+    privileged: true
+    network_mode: host
+
+# --------------------------------------------------------
+# 	AdGuard Home Install
+# -------------------------------------------------------- 
+
+# Pull the latest version of AdGuard Home
+docker pull adguard/adguardhome
+
+# Stop the following system process (blocks port 53)
+systemctl stop systemd-resolved.service
+systemctl disable systemd-resolved.service  
+
+# Create AdGuard Home container
+docker run --name adguardhome\
+    --restart unless-stopped\
+    -v /home/pi/adguard/workdir:/opt/adguardhome/work\
+    -v /home/pi/adguard/config:/opt/adguardhome/conf\
+    -p 53:53/tcp -p 53:53/udp\
+    -p 80:80/tcp -p 3000:3000/tcp\
+    -p 853:853/tcp\
+    -p 853:853/udp\
+    -p 5443:5443/tcp -p 5443:5443/udp\
+    -p 6060:6060/tcp\
+	-p 3080:3080/tcp\
+    -d adguard/adguardhome
+# Port 443 tcp/udp removed <- conflict with Tailscale
+	
+# Username: pi
+# Password: raspberry
+	
+# --------------------------------------------------------
+# 	Tailscale Install
+# -------------------------------------------------------- 
+
+# [OPTIONAL] Use Headscale for self hosted version
+
+# Pull the latest version of Tailscale	
+docker pull tailscale/tailscale:stable
+
+# Create Tailscale container [NOT WORKING]
+docker run \
+  --name tailscale \
+  --restart unless-stopped \
+  -v /home/pi/tailscale/var/lib:/var/lib \
+  -v /home/pi/tailscale/dev/net/tun:/dev/net/tun \
+  --cap-add=NET_ADMIN \
+  --cap-add=SYS_MODULE \
+  --privileged \
+  -e TS_STATE_DIR=/home/pi/tailscale/var/lib \
+  -e TS_COMMAND=tailscaled \
+  -d tailscale/tailscale:stable
+  
+# Set up Tailscale SSH on the server
+tailscale up --ssh
+
+# If Docker container not working
+curl -fsSL https://tailscale.com/install.sh | sh
+sudo tailscale up
+
+# --------------------------------------------------------
+# 	NGINX Install
+# -------------------------------------------------------- 
+
+# Create config file
+sudo nano /home/pi/nginx/config/nginx.conf
+
+# /etc/nginx/nginx.conf or /etc/nginx/sites-available/default
+
+events {
+    worker_connections 1024; # Adjust as needed
+}
+
+http {
+    server {
+                listen 6080;
+                server_name 192.168.0.113;
+
+                location / {
+                        return 301 http://192.168.0.113:7575$request_uri;
+                }
+    }
+}
+
+
+# Create NGINX container
+docker run \
+	--name nginx \
+	--restart unless-stopped\
+	-p 6080:6080 \
+	-v /home/pi/nginx/config/nginx.conf:/etc/nginx/nginx.conf:ro \
+	-d nginx:latest
+
+/home/pi/nginx/config/nginx.conf
+
+# --------------------------------------------------------
+# 	BitWarden Install
+# https://tailscale.dev/blog/vaultwarden-tailnet
+# -------------------------------------------------------- 
+
+# Pull the latest version of BitWarden	
+docker pull vaultwarden/server:latest
+
+# Create volume for BitWarden data
+mkdir /home/pi/bitwarden/data
+
+# Create BitWarden container
+docker run \
+	--name bitwarden \
+	-v /home/pi/bitwarden/data/:/data/ \
+	-p 4080:80 \
+	--restart unless-stopped \
+	-d vaultwarden/server:latest
+	
+#  Command to proxy the vaultwarden server to tailnet
+sudo tailscale serve --bg 127.0.0.1:4080
+
+# Access BitWarden
+https://raspberrypi5.tail9475f.ts.net
+
+x+Y\/z#1o&Tm9$
+
+# --------------------------------------------------------
+# 	Media Server Stack Install
+# https://docs.linuxserver.io/images/docker-sonarr/#docker-compose-recommended-click-here-for-more-info
+# -------------------------------------------------------- 
+
+# Mount external hard drive (OPTIONAL)
+sudo fdisk -l
+
+sudo ls -l /dev/disk/by-uuid/
+# 8C7CDCFB7CDCE0CE
+
+sudo mkdir /mnt/ssd
+sudo mount /dev/sdb1 /mnt/ssd -o uid=1000,gid=1000
+
+sudo nano /etc/fstab
+# UUID=2014-3D52 /mnt/ssd ntfs uid=1000 gid=1000 0 0
+# /dev/sdb1       /mnt/ssd           ntfs    defaults        0       2
+
+# Create data structure for the media stack
+#   data
+#   - torrents
+#   -   - temp
+#   - media
+#   -   - movies
+#   -   - tv
+#   -   - music
+
+# Set permission and ownership
+sudo chown -R 1000:1000 /mnt/ssd/data/
+
+# Create stack for Sonarr + qbittorrent + Prowlarr + Radarr + Brazarr + Lidarr
+version: "2.1"
+services:
+  qbittorrent:
+    image: lscr.io/linuxserver/qbittorrent:latest
+    container_name: qbittorrent
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Europe/Budapest
+      - WEBUI_PORT=8980
+    volumes:
+      - /home/pi/qbittorrent/config:/config
+      - /mnt/ssd/data/torrents:/data/torrents
+    ports:
+      - 8980:8980
+      - 6881:6881
+      - 6881:6881/udp
+    restart: unless-stopped
+    
+  sonarr:
+    image: lscr.io/linuxserver/sonarr:latest
+    container_name: sonarr
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Europe/Budapest
+    volumes:
+      - /home/pi/sonarr/config:/config
+      - /mnt/ssd/data:/data
+    ports:
+      - 8989:8989
+    restart: unless-stopped
+    
+  prowlarr:
+    image: lscr.io/linuxserver/prowlarr:latest
+    container_name: prowlarr
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Europe/Budapest
+    volumes:
+      - /home/pi/prowlarr/config:/config
+    ports:
+      - 9696:9696
+    restart: unless-stopped
+    
+  jellyfin:
+    image: lscr.io/linuxserver/jellyfin:latest
+    container_name: jellyfin
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Europe/Budapest
+      - JELLYFIN_PublishedServerUrl=192.168.0.5 #optional
+    volumes:
+      - /home/pi/jellyfin/config:/config
+      - /mnt/ssd/data/media:/data/media
+    ports:
+      - 8096:8096
+      - 8920:8920 #optional
+      - 7359:7359/udp #optional
+      - 1905:1905/udp #optional
+    restart: unless-stopped
+    
+  bazarr:
+    image: lscr.io/linuxserver/bazarr:latest
+    container_name: bazarr
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Europe/Budapest
+    volumes:
+      - /home/pi/bazarr/config:/config
+      - /mnt/ssd/data:/data
+    ports:
+      - 6767:6767
+    restart: unless-stopped
+
+  radarr:
+    image: lscr.io/linuxserver/radarr:latest
+    container_name: radarr
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Europe/Budapest
+    volumes:
+      - /home/pi/radarr/config:/config
+      - /mnt/ssd/data:/data
+    ports:
+      - 7878:7878
+    restart: unless-stopped
+    
+  lidarr:
+    image: lscr.io/linuxserver/lidarr:latest
+    container_name: lidarr
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Europe/Budapest
+    volumes:
+      - /home/pi/lidarr/config:/config
+      - /mnt/ssd/data:/data
+    ports:
+      - 8686:8686
+    restart: unless-stopped
+    
+  jellyseerr:
+    image: fallenbagel/jellyseerr:latest
+    container_name: jellyseerr
+    environment:
+      - LOG_LEVEL=debug
+      - TZ=Europe/Budapest
+    ports:
+      - 5055:5055
+    volumes:
+      - /home/pi/jellyseerr/config:/app/config
+    restart: unless-stopped
+    
+  readarr:
+    image: lscr.io/linuxserver/readarr:develop
+    container_name: readarr
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Europe/Budapest
+    volumes:
+      - /home/pi/readarr/config:/config
+      - /mnt/ssd/data:/data
+    ports:
+      - 8787:8787
+    restart: unless-stopped
+    
+  stash:
+    image: stashapp/stash:latest
+    container_name: stash
+    restart: unless-stopped
+    ## the container's port must be the same with the STASH_PORT in the environment section
+    ports:
+      - "9999:9999"
+    ## If you intend to use stash's DLNA functionality uncomment the below network mode and comment out the above ports section
+    # network_mode: host
+    logging:
+      driver: "json-file"
+      options:
+        max-file: "10"
+        max-size: "2m"
+    environment:
+      - STASH_STASH=/data/
+      - STASH_GENERATED=/generated/
+      - STASH_METADATA=/metadata/
+      - STASH_CACHE=/cache/
+      ## Adjust below to change default port (9999)
+      - STASH_PORT=9999
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      ## Keep configs, scrapers, and plugins here.
+      - /home/pi/stash/config:/root/.stash
+      ## Point this at your collection.
+      - /mnt/ssd/data/media/xxx:/data
+      ## This is where your stash's metadata lives
+      - /home/pi/stash/metadata:/metadata
+      ## Any other cache content.
+      - /home/pi/stash/cache:/cache
+      ## Where to store binary blob data (scene covers, images)
+      - /home/pi/stash/blobs:/blobs
+      ## Where to store generated content (screenshots,previews,transcodes,sprites)
+      - /home/pi/stash/generated:/generated
+
+# --------------------------------------------------------
+# 	PiAlert Install
+# -------------------------------------------------------- 
+
+# Pull the latest version of PiAlert	
+docker pull jokobsk/pi.alert:latest
+
+# Create volume for PiAlert data
+mkdir /home/pi/pialert/config
+mkdir /home/pi/pialert/db
+mkdir /home/pi/pialert/logs
+
+
+# Create PiAlert container
+docker run -d --network=host --name pialert --restart unless-stopped \
+  -v /home/pi/pialert/config:/home/pi/pialert/config \
+  -v /home/pi/pialert/db:/home/pi/pialert/db \
+  -v /home/pi/pialert/logs:/home/pi/pialert/front/log \
+  -e HOST_USER_GID=1000 \
+  -e HOST_USER_ID=1000 \
+  -e TZ=Europe/Budapest \
+  -e PORT=20211 \
+  jokobsk/pi.alert:latest
+
+# --------------------------------------------------------
+# 	WatchTower Install
+# --------------------------------------------------------   
+# Add container for continuous run
+docker run --detach \
+    --name watchtower \
+    --volume /var/run/docker.sock:/var/run/docker.sock \
+    containrrr/watchtower
+  
+# Run updater once
+docker run --rm \
+    -e WATCHTOWER_CLEANUP=true \
+    -v /var/run/docker.sock:/var/run/docker.sock \
+    containrrr/watchtower \
+    --run-once 
+
+# Run updater once for certain containers    
+docker run --rm \
+    -v /var/run/docker.sock:/var/run/docker.sock \
+    containrrr/watchtower \
+    --run-once \
+    bazarr lidarr prowlarr radarr readarr sonarr adguardhome pigallery homepage qbittorrent
+    
+docker run --rm \
+    -v /var/run/docker.sock:/var/run/docker.sock \
+    containrrr/watchtower \
+    --run-once \
+    open-webui
+    
+docker run --rm \
+    -v /var/run/docker.sock:/var/run/docker.sock \
+    containrrr/watchtower \
+    --run-once \
+    bitwarden
+    
+docker run --rm \
+    -v /var/run/docker.sock:/var/run/docker.sock \
+    containrrr/watchtower \
+    --run-once \
+    homeassistant
+    
+# --------------------------------------------------------
+# 	PiGallery Install
+# --------------------------------------------------------     
+docker run -d --name pigallery --restart unless-stopped\
+   -p 5680:5680 \
+   -e NODE_ENV=production \
+   -v /home/pi/pigallery/config:/app/data/config \
+   -v /home/pi/pigallery/db:/app/data/db \
+   -v /mnt/ssd/birdfeeder/images:/app/data/images \
+   -v /home/pi/pigallery/config:/app/data/tmp \
+   bpatrik/pigallery2:latest
+   
+# Change listening port to 5680 in config file
+
+# --------------------------------------------------------
+# 	Mosquitto MQTT Install
+# --------------------------------------------------------     
+docker run -d \
+  --name mosquitto \
+  --restart=unless-stopped \
+  -v /home/pi/mosquitto/config:/mosquitto/config \
+  -v /home/pi/mosquitto/data:/mosquitto/data \
+  -v /home/pi/mosquitto/log:/mosquitto/log \
+  -p 1783:1783 \
+  -p 9001:9001 \
+  -i \
+  -t \
+  eclipse-mosquitto
+  
+# Change permissions of the volumes for editing
+sudo chmod -R 777 /home/pi/homeassistant
+sudo chown -R 1000 /home/pi/homeassistant
+
+sudo chmod -R 777 /home/pi/homeassistant
+sudo chown -R 1000 /home/pi/homeassistant
+
+# Create password file
+sudo touch /home/pi/mosquitto/config/pwfile
+sudo nano /home/pi/mosquitto/config/mosquitto.conf
+sudo chmod 0700 /home/pi/mosquitto/config/pwfile
+
+# Creating a User for your MQTT Broker
+docker compose exec mosquitto sh
+mosquitto_passwd -c /mosquitto/config/pwfile mainUser
+exit
+docker compose restart mosquitto
+   
+# Change listening port in config file
+
+# --------------------------------------------------------
+# 	Node-Red Install
+# -------------------------------------------------------- 
+
+docker run -it \
+    -p 1880:1880 \
+    -v /home/pi/node-red/data:/data \
+    --restart unless-stopped \
+    --name node-red \
+    nodered/node-red
+
+# Set permission for the data folder
+sudo chown -R 1000:1000 /home/pi/node-red/data
+
+# --------------------------------------------------------
+# 	Piper Install
+# -------------------------------------------------------- 
+docker run -d \
+  --name=piper \
+  -e PUID=1000 \
+  -e PGID=1000 \
+  -e TZ=Etc/UTC \
+  -e PIPER_VOICE=en_US-amy-low \
+  -p 10200:10200 \
+  -v /home/pi/piper/data:/config \
+  --restart unless-stopped \
+  lscr.io/linuxserver/piper:latest
+  
+  
+docker run -d -p 59125:59125 synesthesiam/marytts:5.2
+# --------------------------------------------------------
+# 	PairDrop Install
+# -------------------------------------------------------- 
+docker run -d \
+    --name=pairdrop \
+    --restart=unless-stopped \
+    -p 127.0.0.1:3060:3060\
+    -e PUID=1000 \
+    -e PGID=1000 \
+    -e WS_SERVER=false \
+    -e WS_FALLBACK=false \
+    -e RTC_CONFIG=false \
+    -e RATE_LIMIT=false \
+    -e DEBUG_MODE=false \
+    -e TZ=Etc/UTC \
+    lscr.io/linuxserver/pairdrop 
+    
+# --------------------------------------------------------
+# 	WUD Install
+# -------------------------------------------------------- 
+docker run -d --name whatsUpDocker \
+  -v "/var/run/docker.sock:/var/run/docker.sock" \
+  -p 3000:3090\
+  fmartinou/whats-up-docker
+  
+# --------------------------------------------------------
+# 	Pi Wake-up on LAN Install
+# --------------------------------------------------------  
+docker run --network="host" \
+            -v /home/pi/piwol/data:/app/data \
+            -e "ASPNETCORE_URLS=http://+:8050" \
+            chtake/pi-wol:latest
+ 
+# --------------------------------------------------------
+# 	Immich Install
+# --------------------------------------------------------  
+
+# Docker compose file
+services:
+  immich-server:
+    container_name: immich_server
+    image: ghcr.io/immich-app/immich-server:${IMMICH_VERSION:-release}
+    # extends:
+    #   file: hwaccel.transcoding.yml
+    #   service: cpu # set to one of [nvenc, quicksync, rkmpp, vaapi, vaapi-wsl] for accelerated transcoding
+    volumes:
+      # Do not edit the next line. If you want to change the media storage location on your system, edit the value of UPLOAD_LOCATION in the .env file
+      - ${UPLOAD_LOCATION}:/usr/src/app/upload
+      - /etc/localtime:/etc/localtime:ro
+    env_file:
+      - .env
+    ports:
+      - '2283:2283'
+    depends_on:
+      - redis
+      - database
+    restart: always
+    healthcheck:
+      disable: false
+
+  immich-machine-learning:
+    container_name: immich_machine_learning
+    # For hardware acceleration, add one of -[armnn, cuda, openvino] to the image tag.
+    # Example tag: ${IMMICH_VERSION:-release}-cuda
+    image: ghcr.io/immich-app/immich-machine-learning:${IMMICH_VERSION:-release}
+    # extends: # uncomment this section for hardware acceleration - see https://immich.app/docs/features/ml-hardware-acceleration
+    #   file: hwaccel.ml.yml
+    #   service: cpu # set to one of [armnn, cuda, openvino, openvino-wsl] for accelerated inference - use the `-wsl` version for WSL2 where applicable
+    volumes:
+      - model-cache:/cache
+    env_file:
+      - .env
+    restart: always
+    healthcheck:
+      disable: false
+
+  redis:
+    container_name: immich_redis
+    image: docker.io/redis:6.2-alpine@sha256:905c4ee67b8e0aa955331960d2aa745781e6bd89afc44a8584bfd13bc890f0ae
+    healthcheck:
+      test: redis-cli ping || exit 1
+    restart: always
+
+  database:
+    container_name: immich_postgres
+    image: docker.io/tensorchord/pgvecto-rs:pg14-v0.2.0@sha256:90724186f0a3517cf6914295b5ab410db9ce23190a2d9d0b9dd6463e3fa298f0
+    environment:
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_USER: ${DB_USERNAME}
+      POSTGRES_DB: ${DB_DATABASE_NAME}
+      POSTGRES_INITDB_ARGS: '--data-checksums'
+    volumes:
+      # Do not edit the next line. If you want to change the database storage location on your system, edit the value of DB_DATA_LOCATION in the .env file
+      - ${DB_DATA_LOCATION}:/var/lib/postgresql/data
+    healthcheck:
+      test: >-
+        pg_isready --dbname="$${POSTGRES_DB}" --username="$${POSTGRES_USER}" || exit 1;
+        Chksum="$$(psql --dbname="$${POSTGRES_DB}" --username="$${POSTGRES_USER}" --tuples-only --no-align
+        --command='SELECT COALESCE(SUM(checksum_failures), 0) FROM pg_stat_database')";
+        echo "checksum failure count is $$Chksum";
+        [ "$$Chksum" = '0' ] || exit 1
+      interval: 5m
+      start_interval: 30s
+      start_period: 5m
+    command: >-
+      postgres
+      -c shared_preload_libraries=vectors.so
+      -c 'search_path="$$user", public, vectors'
+      -c logging_collector=on
+      -c max_wal_size=2GB
+      -c shared_buffers=512MB
+      -c wal_compression=on
+    restart: always
+
+volumes:
+  model-cache:
+  
+# Env file
+# You can find documentation for all the supported env variables at https://immich.app/docs/install/environment-variables
+
+# The location where your uploaded files are stored
+UPLOAD_LOCATION=/home/pi/immich/library
+# The location where your database files are stored
+DB_DATA_LOCATION=/home/pi/immich/postgres
+
+# To set a timezone, uncomment the next line and change Etc/UTC to a TZ identifier from this list: https://en.wikipedia.org/wiki/List_of_tz_database_time_zones#List
+# TZ=Etc/UTC
+
+# The Immich version to use. You can pin this to a specific version like "v1.71.0"
+IMMICH_VERSION=release
+
+# Connection secret for postgres. You should change it to a random password
+# Please use only the characters `A-Za-z0-9`, without special characters or spaces
+DB_PASSWORD=postgres
+
+# The values below this line do not need to be changed
+###################################################################################
+DB_USERNAME=postgres
+DB_DATABASE_NAME=immich
+
+
+# --------------------------------------------------------
+# 	Backup config files
+# -------------------------------------------------------- 
+    
+sudo zip -r /mnt/ssd/backups/backup_adguard.zip /home/pi/adguard
+sudo zip -r /mnt/ssd/backups/backup_bitwarden.zip /home/pi/bitwarden
+sudo zip -r /mnt/ssd/backups/backup_homarr.zip /home/pi/homarr
+sudo zip -r /mnt/ssd/backups/backup_nginx.zip /home/pi/nginx
+sudo zip -r /mnt/ssd/backups/backup_bazarr.zip /home/pi/bazarr
+sudo zip -r /mnt/ssd/backups/backup_jellyfin.zip /home/pi/jellyfin
+sudo zip -r /mnt/ssd/backups/backup_prowlarr.zip /home/pi/prowlarr
+sudo zip -r /mnt/ssd/backups/backup_python_venv.zip /home/pi/python_venv
+sudo zip -r /mnt/ssd/backups/backup_qbittorrent.zip /home/pi/qbittorrent
+sudo zip -r /mnt/ssd/backups/backup_sonarr.zip /home/pi/sonarr
+sudo zip -r /mnt/ssd/backups/backup_radarr.zip /home/pi/radarr
+sudo zip -r /mnt/ssd/backups/backup_lidarr.zip /home/pi/lidarr
+sudo zip -r /mnt/ssd/backups/backup_homepage.zip /home/pi/homepage
+sudo zip -r /mnt/ssd/backups/backup_pigallery.zip /home/pi/pigallery
+sudo zip -r /mnt/ssd/backups/backup_homeassistant.zip /home/pi/homeassistant
+sudo zip -r /mnt/ssd/backups/backup_piwol.zip /home/pi/piwol
+sudo zip -r /mnt/ssd/backups/backup_stash.zip /home/pi/stash
+sudo zip -r /mnt/ssd/backups/backup_whisparr.zip /home/pi/whisparr
+
+# --------------------------------------------------------
+# 	Backup script
+# --------------------------------------------------------
+
+sudo nano /home/pi/backup_and_upload.sh
+chmod +x /home/pi/backup_and_upload.sh
+bash /home/pi/backup_and_upload.sh
+
+----------------------------------------------------------
+#!/bin/bash
+
+# Configuration
+BACKUP_DIR="/mnt/ssd/backups"
+DEST_REMOTE="gdrive:my_backups"
+TIMESTAMP=$(date +"%Y-%m-%d")
+DAYS_TO_KEEP=7
+
+# Folders to back up
+FOLDERS=(
+  adguard bitwarden homarr nginx bazarr jellyfin prowlarr python_venv
+  qbittorrent sonarr radarr lidarr homepage pigallery homeassistant
+  piwol stash whisparr
+)
+
+# Create zip backups
+echo "📦 Compressing folders..."
+for folder in "${FOLDERS[@]}"; do
+  ZIP_NAME="backup_${folder}_${TIMESTAMP}.zip"
+  sudo zip -r "${BACKUP_DIR}/${ZIP_NAME}" "/home/pi/${folder}" >/dev/null
+  echo "✅ $folder backed up to $ZIP_NAME"
+done
+
+# Upload to Google Drive
+echo "☁️ Uploading backups to Google Drive..."
+rclone copy "$BACKUP_DIR" "$DEST_REMOTE" --include "*${TIMESTAMP}.zip" --progress
+
+# Delete remote files older than X days
+echo "🧹 Cleaning up old remote backups (older than $DAYS_TO_KEEP days)..."
+rclone delete --min-age ${DAYS_TO_KEEP}d "$DEST_REMOTE" --drive-use-trash=false
+
+# Delete local files older than X days
+echo "🧹 Cleaning up old local backups (older than $DAYS_TO_KEEP days)..."
+find "$BACKUP_DIR" -name "*.zip" -type f -mtime +${DAYS_TO_KEEP} -delete
+
+# Show used and free space on Google Drive
+echo "📊 Google Drive Usage:"
+rclone about gdrive:
+----------------------------------------------------------
