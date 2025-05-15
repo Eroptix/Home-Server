@@ -1,0 +1,38 @@
+#!/bin/bash
+
+# Configuration
+BACKUP_DIR="/mnt/ssd/backups"
+DEST_REMOTE="gdrive:my_backups"
+TIMESTAMP=$(date +"%Y-%m-%d")
+DAYS_TO_KEEP=7
+
+# Folders to back up
+FOLDERS=(
+  adguard bitwarden homarr nginx bazarr jellyfin prowlarr python_venv
+  qbittorrent sonarr radarr lidarr homepage pigallery homeassistant
+  piwol stash whisparr
+)
+
+# Create zip backups
+echo "📦 Compressing folders..."
+for folder in "${FOLDERS[@]}"; do
+  ZIP_NAME="backup_${folder}_${TIMESTAMP}.zip"
+  sudo zip -r "${BACKUP_DIR}/${ZIP_NAME}" "/home/pi/${folder}" >/dev/null
+  echo "✅ $folder backed up to $ZIP_NAME"
+done
+
+# Upload to Google Drive
+echo "☁️ Uploading backups to Google Drive..."
+rclone copy "$BACKUP_DIR" "$DEST_REMOTE" --include "*${TIMESTAMP}.zip" --progress
+
+# Delete remote files older than X days
+echo "🧹 Cleaning up old remote backups (older than $DAYS_TO_KEEP days)..."
+rclone delete --min-age ${DAYS_TO_KEEP}d "$DEST_REMOTE" --drive-use-trash=false
+
+# Delete local files older than X days
+echo "🧹 Cleaning up old local backups (older than $DAYS_TO_KEEP days)..."
+find "$BACKUP_DIR" -name "*.zip" -type f -mtime +${DAYS_TO_KEEP} -delete
+
+# Show used and free space on Google Drive
+echo "📊 Google Drive Usage:"
+rclone about gdrive:
