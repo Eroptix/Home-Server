@@ -163,8 +163,8 @@ String led_topic =                          String("home/") + deviceName + Strin
 String IRsensor_topic =                     String("home/") + deviceName + String("/IRsensor");
 String USsensor_topic =                     String("home/") + deviceName + String("/USsensor");
 String soil1_topic =                        String("home/") + deviceName + String("/moisture/soil1");
-String soil2_topic =                        String("home/") + deviceName + String("/moisture/soil1");
-String soil3_topic =                        String("home/") + deviceName + String("/moisture/soil1");
+String soil2_topic =                        String("home/") + deviceName + String("/moisture/soil2");
+String soil3_topic =                        String("home/") + deviceName + String("/moisture/soil3");
 
 // Initalize the Mqtt client instance
 WiFiClient espClient;
