@@ -116,9 +116,8 @@ bool statusFan = true;
 int pumpPin[] = {99, pumpOnePin, pumpTwoPin, 99, 99, 99, 99};
   
 // Refresh loop parameters
-int refreshRate = 5;                                // Measurement loop length
+int refreshRate = 5000;                             // Measurement loop length
 unsigned long previousMillis1 = 0;
-const long period1 = refreshRate * 1000;
 unsigned long previousMillisMQTT = 0;               // MQTT reconnect timing
 unsigned long previousMillisWiFi = 0;               // WiFi reconnect timing
 unsigned long mqttReconnectInterval = 5000;         // Check MQTT every 5 seconds
@@ -165,6 +164,9 @@ String USsensor_topic =                     String("home/") + deviceName + Strin
 String soil1_topic =                        String("home/") + deviceName + String("/moisture/soil1");
 String soil2_topic =                        String("home/") + deviceName + String("/moisture/soil2");
 String soil3_topic =                        String("home/") + deviceName + String("/moisture/soil3");
+
+// Parameters
+String refreshRate_topic =                  String("home/") + deviceName + String("/parameters/refreshRate");
 
 // Initalize the Mqtt client instance
 WiFiClient espClient;
@@ -553,12 +555,16 @@ void sendDiscoveries()
   delay(100);
   publishMQTTSensorDiscovery("Water Level (IR)", "sensor", "mdi-car-coolant-level", "cm", "distance", "measurement", "", IRsensor_topic, 1);
   delay(100);
+
+  // Parameters
+  publishMQTTSensorDiscovery("Refresh Rate", "sensor", "mdi:refresh", "", "", "", "diagnostic", refreshRate_topic, 0);
+  delay(100);
 }
 
 // Send back received parameters to the server
 void sendParameters()
 {
-  //publishMessage(glassweight_topic, glassWeight, true);
+  publishMessage(refreshRate_topic, refreshRate, true);
 }
 
 /************************** Setup function ***********************************/
@@ -685,7 +691,7 @@ void loop(void)
   client.loop();
 
   // Standby loop
-  if (currentMillis - previousMillis1 >= period1) 
+  if (currentMillis - previousMillis1 >= refreshRate * 1000) 
   { 
     previousMillis1 = currentMillis;
 
@@ -815,18 +821,18 @@ void handleParameters(const String& jsonPayload)
     }
 
     // Check if all expected parameters exist before assigning values
-    if (!doc.containsKey("glassWeight"))
+    if (!doc.containsKey("refreshRate"))
     {
         consoleLog("Missing one or more required parameters", 2);
         return;
     }
 
     // Extract values
-    //glassWeight = doc["glassWeight"].as<int>();
+    refreshRate = doc["refreshRate"].as<int>();
 
     // Print extracted values
     Serial.println("  Extracted Parameters:");
-    //Serial.print("    glassWeight: "); Serial.println(glassWeight);
+    Serial.print("    refreshRate: "); Serial.println(refreshRate);
 
     consoleLog("Parameters received and saved", 1);
 }
