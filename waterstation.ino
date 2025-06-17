@@ -547,12 +547,18 @@ void sendDiscoveries()
   delay(100);
   publishMQTTSensorDiscovery("WiFi Strength", "sensor", "mdi-rss", "", "", "", "diagnostic", wifi_strength_topic, -1);
   delay(100);
+
+  // Sensors
+  publishMQTTSensorDiscovery("Water Level (US)", "sensor", "mdi-car-coolant-level", "cm", "distance", "measurement", "", USsensor_topic, 1);
+  delay(100);
+  publishMQTTSensorDiscovery("Water Level (IR)", "sensor", "mdi-car-coolant-level", "cm", "distance", "measurement", "", IRsensor_topic, 1);
+  delay(100);
 }
 
 // Send back received parameters to the server
 void sendParameters()
 {
-  publishMessage(glassweight_topic, glassWeight, true);
+  //publishMessage(glassweight_topic, glassWeight, true);
 }
 
 /************************** Setup function ***********************************/
@@ -682,6 +688,19 @@ void loop(void)
   if (currentMillis - previousMillis1 >= period1) 
   { 
     previousMillis1 = currentMillis;
+
+    // Read sensors
+    double USlevel = readLevelUltrasonic(5);
+    double IRlevel = readLevelInfrared(5);
+    bool floatSensor = readFloatSensor();
+
+    // Send diagnostics to Home Assistant
+    publishMessage(wifi_strength_topic, 5, false);
+    publishMessage(uptime_topic, 5, false);
+
+    // Send telemetry to Home Assistant
+    publishMessage(USsensor_topic, USlevel, false);
+    publishMessage(IRsensor_topic, IRlevel, false);
   }
 
   // Add delay to the loop
@@ -803,11 +822,11 @@ void handleParameters(const String& jsonPayload)
     }
 
     // Extract values
-    glassWeight = doc["glassWeight"].as<int>();
+    //glassWeight = doc["glassWeight"].as<int>();
 
     // Print extracted values
     Serial.println("  Extracted Parameters:");
-    Serial.print("    glassWeight: "); Serial.println(glassWeight);
+    //Serial.print("    glassWeight: "); Serial.println(glassWeight);
 
     consoleLog("Parameters received and saved", 1);
 }
@@ -881,7 +900,7 @@ double readLevelUltrasonic(int numAvg)
 
   for (int i = 0; i < numAvg; ++i) 
   {
-    double* distances = HCSR04.measureDistanceCm();  // Assuming library returns pointer
+    double* distances = HCSR04.measureDistanceCm();
     if (distances != nullptr) {
       sumDistance += distances[0];
     }
@@ -950,7 +969,7 @@ double getWaterLevel(int numAvg)
     if (abs(ir - us) <= maxDiff) {
       level = (ir + us) / 2.0;
     } else {
-      Serial.println("⚠️ Sensor mismatch! Using ultrasonic as primary.");
+      Serial.println("Sensor mismatch! Using ultrasonic as primary.");
       level = us;
     }
   } else if (usValid) {
@@ -958,13 +977,13 @@ double getWaterLevel(int numAvg)
   } else if (irValid) {
     level = ir;
   } else {
-    Serial.println("❌ Both sensor readings are invalid.");
+    Serial.println("Both sensor readings are invalid.");
     return prevLevel >= 0 ? prevLevel : -1.0;
   }
 
   // Compare with previous level
   if (prevLevel >= 0 && abs(level - prevLevel) > maxJump) {
-    Serial.println("⚠️ Sudden jump detected, using previous level instead.");
+    Serial.println("Sudden jump detected, using previous level instead.");
     return prevLevel;
   }
 
