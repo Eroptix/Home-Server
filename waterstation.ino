@@ -18,7 +18,7 @@
 #include <PubSubClient.h>
 #include <HCSR04.h>
 #include <SharpIR.h>
-#include <Adafruit_MCP23017.h>
+#include <Adafruit_MCP23X17.h>
 
 #define WIFI_SSID "UPC8F21BEF"
 #define WIFI_PASS "k7pp3aexkmQh"
@@ -127,8 +127,14 @@ unsigned long mqttRetryMaxInterval = 60000;         // 60 seconds max
 bool wifiStatus = false;                            // WiFi status indicator
 long wifiStrength;                                  // WiFi strength value 
 
+// Calibration constants
+double calibUsA = 0;
+double calibUsB = 1;
+double calibIrA = 0;
+double calibIrB = 1;
+
 SharpIR sensor( SharpIR::GP2Y0A41SK0F, IRsensorPin );
-Adafruit_MCP23017 mcp;
+Adafruit_MCP23X17 mcp;
 
 /************************** HomeAssistant Settings ***********************************/
 
@@ -581,7 +587,7 @@ void setup(void)
   pinMode(UStriggerPin, OUTPUT);
 
   // Initialize I2C and MCP23017
-  mcp.begin(0); // 0 = address 0x20 (A0-A2 = GND)
+  mcp.begin_I2C(); // 0 = address 0x20 (A0-A2 = GND)
 
   // Initialize MCP23017 pins
   mcp.pinMode(pumpOnePin, OUTPUT);
@@ -592,8 +598,8 @@ void setup(void)
   mcp.pinMode(soilOnePin, INPUT);
   mcp.pinMode(soilTwoPin, INPUT);
   mcp.pinMode(soilThreePin, INPUT);
-  mcp.pinMode(limitUp, INPUT);
-  mcp.pinMode(limitDown, INPUT);
+  mcp.pinMode(limitUpPin, INPUT);
+  mcp.pinMode(limitDownPin, INPUT);
 
   //mcp.pullUp(1, HIGH);
 
@@ -864,18 +870,6 @@ void pump(int pumpID, bool state)
        case 2:
           publishMessage(pump2_topic, pumpStatus[pumpID] ? "ON" : "OFF", false);
           break;
-       case 3:
-          publishMessage(pump3_topic, pumpStatus[pumpID] ? "ON" : "OFF", false);
-          break;
-       case 4:
-          publishMessage(pump4_topic, pumpStatus[pumpID] ? "ON" : "OFF", false);
-          break;
-       case 5:
-          publishMessage(pump5_topic, pumpStatus[pumpID] ? "ON" : "OFF", false);
-          break;
-       case 6:
-          publishMessage(pump6_topic, pumpStatus[pumpID] ? "ON" : "OFF", false);
-          break;
        default:
          // statements
          break;
@@ -946,7 +940,7 @@ double readLevelInfrared(int numAvg)
 
 bool readFloatSensor ()
 {
-  int switchState = digitalRead(pinHighSwitch);
+  int switchState = digitalRead(limitUpPin);
 
   Serial.print("Safety switch: ");
   Serial.println(switchState);
