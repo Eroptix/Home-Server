@@ -738,7 +738,7 @@ void setup() {
 
     // Send data to Thingboards server
     Serial.println("-----------------------------------------");
-    consoleLog("Sending data to TB server");
+    Serial.println("Sending data to Home Assistant");
     delay(200);
     
     tb.sendTelemetryData("temperature", airTemperature);
@@ -776,12 +776,6 @@ void setup() {
     tb.sendTelemetryData("motiontrigger", motionTrigger);
     Serial.println("    Motion trigger sent");
     delay(200);
-
-    tb.sendAttributeData("operationStatus",false);
-    delay(200);
-    consoleLog("Deep sleep started");
-
-    delay(500);
   
     // Turn off indicator LED
     digitalWrite(INDICATOR_LED_PIN,LOW);
@@ -835,53 +829,17 @@ void setup() {
     connectTB();
     
     tb.sendAttributeData("operationStatus",true);
-    consoleLog("Developer mode started");
+    Serial.println("Developer mode started");
   }
 }
 
 void loop() {
   //Firmware update mode 
-  tb.loop();
-
-  if (!currentFWSent) {
-    // Firmware state send at the start of the firmware
-    currentFWSent = tb.Firmware_Send_Info(CURRENT_FIRMWARE_TITLE, CURRENT_FIRMWARE_VERSION) && tb.Firmware_Send_State(FW_STATE_UPDATED);
-  }
-
-  if (!updateRequestSent) {
-    Serial.println("Checking for firmware update");
-    const OTA_Update_Callback callback(&progressCallback, &updatedCallback, CURRENT_FIRMWARE_TITLE, CURRENT_FIRMWARE_VERSION, &updater, FIRMWARE_FAILURE_RETRIES, FIRMWARE_PACKET_SIZE);
-    updateRequestSent = tb.Start_Firmware_Update(callback);
-  }
-
+  client.loop();
   delay(200);
 }
 
 /************************** Device Functions ***********************************/
-
-void consoleLog(String consoleText, int logLevel)
-{
-    switch (logLevel) 
-    {
-      case 1:
-        Serial.print("[INFO] ");  
-        publishMessage(log_info_topic, consoleText, false);
-        break;
-      case 2:
-        Serial.print("[WARNING] ");
-        publishMessage(log_warning_topic, consoleText, false);
-        break;
-      case 3:
-        Serial.print("[ERROR] ");
-        publishMessage(log_error_topic, consoleText, false);
-        break;
-      default:
-        consoleLog("Unknown log warning level", 2);
-        break;
-    }
-
-    Serial.println(consoleText);
-}
 
 bool connectWifi()
 {
@@ -979,24 +937,6 @@ void handleParameters(const String& jsonPayload)
     Serial.print("    refreshRate: "); Serial.println(refreshRate);
 
     consoleLog("Parameters received and saved", 1);
-}
-
-String getCommands(String data, char separator, int index)
-{
-  //
-  int found = 0;
-  int strIndex[] = {0, -1};
-  int maxIndex = data.length()-1;
-
-  for(int i=0; i<=maxIndex && found<=index; i++){
-    if(data.charAt(i)==separator){
-        found++;
-        strIndex[0] = strIndex[1]+1;
-        strIndex[1] = (i == maxIndex) ? i+1 : i;
-    }
-  }
-
-  return found>index ? data.substring(strIndex[0], strIndex[1]) : "";
 }
 
 void setupBootParameters(String parameter, double value){
