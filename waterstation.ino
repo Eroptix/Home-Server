@@ -165,11 +165,23 @@ String wifi_strength_topic =                String("home/") + deviceName + Strin
 String pump1_topic =                        String("home/") + deviceName + String("/pumps/pump1");
 String pump2_topic =                        String("home/") + deviceName + String("/pumps/pump2");
 String led_topic =                          String("home/") + deviceName + String("/led");
+String fan_topic =                          String("home/") + deviceName + String("/fan");
 String IRsensor_topic =                     String("home/") + deviceName + String("/IRsensor");
 String USsensor_topic =                     String("home/") + deviceName + String("/USsensor");
 String soil1_topic =                        String("home/") + deviceName + String("/moisture/soil1");
 String soil2_topic =                        String("home/") + deviceName + String("/moisture/soil2");
 String soil3_topic =                        String("home/") + deviceName + String("/moisture/soil3");
+String float_topic =                        String("home/") + deviceName + String("/float");
+
+// Numbers
+String pump_time_state_topic =              String("home/") + deviceName + String("/pumps/time/state");
+String pump_time_command_topic =            String("home/") + deviceName + String("/pumps/time/command");
+
+// Switches
+String pump1_state_topic =                  String("home/") + deviceName + String("/pumps/pump1/state");
+String pump1_command_topic =                String("home/") + deviceName + String("/pumps/pump1/command");
+String pump2_state_topic =                  String("home/") + deviceName + String("/pumps/pump2/state");
+String pump2_command_topic =                String("home/") + deviceName + String("/pumps/pump2/command");
 
 // Parameters
 String refreshRate_topic =                  String("home/") + deviceName + String("/parameters/refreshRate");
@@ -193,6 +205,9 @@ bool connectMQTT()
       subscribeTopic(ota_response_topic);
       subscribeTopic(command_topic);
       subscribeTopic(parameter_response_topic);
+      subscribeTopic(pump1_command_topic);
+      subscribeTopic(pump2_command_topic);
+      subscribeTopic(pump_time_command_topic);
 
       // Send discovery payload
 	    sendDiscoveries();
@@ -236,6 +251,10 @@ void mqttCallback(char* topic, byte* payload, unsigned int length)
   else if (String(topic) == command_topic) 
   {
     handleCommands(message);
+  }
+  else if (String(topic) == pump1_command_topic) 
+  {
+    handlePumps(message, 1)
   }
   else
   {
@@ -470,14 +489,228 @@ String removeSpaces(String input)
 }
 
 // Create sensor discovery payload
-void publishMQTTSensorDiscovery(String name, String deviceType,	String icon, String unitOfMeasurement, String deviceClass, String stateClass, String entityCategory, String stateTopic, int displayPrecision) 
+void publishMQTTSensorDiscovery(String name, String stateTopic, String icon = "", String unitOfMeasurement = "", String deviceClass = "", String stateClass = "", String entityCategory = "", int displayPrecision = -1) 
+{
+  String uniqueID = deviceName + "-" + removeSpaces(name);
+  String objectID = deviceName + "_" + removeSpaces(name);
+  String topic = "homeassistant/sensor/" + uniqueID + "/config";
+
+  DynamicJsonDocument doc(1024);
+  doc["name"] = name;
+  doc["unique_id"] = uniqueID;
+  doc["object_id"] = objectID;
+  doc["state_topic"] = stateTopic;
+
+  if (!icon.isEmpty()) doc["icon"] = icon;
+  if (!unitOfMeasurement.isEmpty()) doc["unit_of_meas"] = unitOfMeasurement;
+  if (!deviceClass.isEmpty()) doc["device_class"] = deviceClass;
+  if (!stateClass.isEmpty()) doc["state_class"] = stateClass;
+  if (!entityCategory.isEmpty()) doc["entity_category"] = entityCategory;
+  if (displayPrecision != -1) doc["suggested_display_precision"] = displayPrecision;
+
+  doc["availability_topic"] = availability_topic;
+  doc["payload_available"] = "connected";
+  doc["payload_not_available"] = "connection lost";
+
+  JsonObject device = doc.createNestedObject("device");
+  JsonArray identifiers = device.createNestedArray("identifiers");
+  identifiers.add(deviceName);
+  device["name"] = deviceName;
+  device["model"] = deviceModel;
+  device["manufacturer"] = deviceManufacturer;
+
+  String payload;
+  serializeJson(doc, payload);
+  publishMessage(topic.c_str(), payload.c_str(), true);
+}
+
+// Create binary sensor discovery payload
+void publishMQTTBinarySensorDiscovery(String name, String stateTopic, String icon = "", String deviceClass = "", String entityCategory = "") 
+{
+  String uniqueID = deviceName + "-" + removeSpaces(name);
+  String objectID = deviceName + "_" + removeSpaces(name);
+  String topic = "homeassistant/binary_sensor/" + uniqueID + "/config";
+
+  DynamicJsonDocument doc(1024);
+  doc["name"] = name;
+  doc["unique_id"] = uniqueID;
+  doc["object_id"] = objectID;
+  doc["state_topic"] = stateTopic;
+  doc["payload_on"] = "ON";
+  doc["payload_off"] = "OFF";
+
+  if (!icon.isEmpty()) doc["icon"] = icon;
+  if (!deviceClass.isEmpty()) doc["device_class"] = deviceClass;
+  if (!entityCategory.isEmpty()) doc["entity_category"] = entityCategory;
+
+  doc["availability_topic"] = availability_topic;
+  doc["payload_available"] = "connected";
+  doc["payload_not_available"] = "connection lost";
+
+  JsonObject device = doc.createNestedObject("device");
+  JsonArray identifiers = device.createNestedArray("identifiers");
+  identifiers.add(deviceName);
+  device["name"] = deviceName;
+  device["model"] = deviceModel;
+  device["manufacturer"] = deviceManufacturer;
+
+  String payload;
+  serializeJson(doc, payload);
+  publishMessage(topic.c_str(), payload.c_str(), true);
+}
+
+// Create switch discovery payload
+void publishMQTTSwitchDiscovery(String name, String commandTopic, String stateTopic, String icon = "") 
+{
+  String uniqueID = deviceName + "-" + removeSpaces(name);
+  String objectID = deviceName + "_" + removeSpaces(name);
+  String topic = "homeassistant/switch/" + uniqueID + "/config";
+
+  DynamicJsonDocument doc(1024);
+  doc["name"] = name;
+  doc["unique_id"] = uniqueID;
+  doc["object_id"] = objectID;
+  doc["command_topic"] = commandTopic;
+  doc["state_topic"] = stateTopic;
+  doc["payload_on"] = "manual on";
+  doc["payload_off"] = "manual off";
+  doc["state_on"] = "ON";
+  doc["state_off"] = "OFF";
+  doc["retain"] = true;
+
+  if (!icon.isEmpty()) doc["icon"] = icon;
+
+  doc["availability_topic"] = availability_topic;
+  doc["payload_available"] = "connected";
+  doc["payload_not_available"] = "connection lost";
+
+  JsonObject device = doc.createNestedObject("device");
+  JsonArray identifiers = device.createNestedArray("identifiers");
+  identifiers.add(deviceName);
+  device["name"] = deviceName;
+  device["model"] = deviceModel;
+  device["manufacturer"] = deviceManufacturer;
+
+  String payload;
+  serializeJson(doc, payload);
+  publishMessage(topic.c_str(), payload.c_str(), true);
+}
+
+// Create select discovery payload
+void publishMQTTSelectDiscovery(String name, String commandTopic, String stateTopic, std::vector<String> options, String icon = "") 
+{
+  String uniqueID = deviceName + "-" + removeSpaces(name);
+  String objectID = deviceName + "_" + removeSpaces(name);
+  String topic = "homeassistant/select/" + uniqueID + "/config";
+
+  DynamicJsonDocument doc(1024);
+  doc["name"] = name;
+  doc["unique_id"] = uniqueID;
+  doc["object_id"] = objectID;
+  doc["command_topic"] = commandTopic;
+  doc["state_topic"] = stateTopic;
+  doc["retain"] = true;
+
+  JsonArray opts = doc.createNestedArray("options");
+  for (auto& opt : options) opts.add(opt);
+
+  if (!icon.isEmpty()) doc["icon"] = icon;
+
+  doc["availability_topic"] = availability_topic;
+  doc["payload_available"] = "connected";
+  doc["payload_not_available"] = "connection lost";
+
+  JsonObject device = doc.createNestedObject("device");
+  JsonArray identifiers = device.createNestedArray("identifiers");
+  identifiers.add(deviceName);
+  device["name"] = deviceName;
+  device["model"] = deviceModel;
+  device["manufacturer"] = deviceManufacturer;
+
+  String payload;
+  serializeJson(doc, payload);
+  publishMessage(topic.c_str(), payload.c_str(), true);
+}
+
+// Create button discovery payload
+void publishMQTTButtonDiscovery(String name, String commandTopic, String icon = "", bool optimistic = false) 
+{
+  String uniqueID = deviceName + "-" + removeSpaces(name);
+  String objectID = deviceName + "_" + removeSpaces(name);
+  String topic = "homeassistant/button/" + uniqueID + "/config";
+
+  DynamicJsonDocument doc(1024);
+  doc["name"] = name;
+  doc["unique_id"] = uniqueID;
+  doc["object_id"] = objectID;
+  doc["command_topic"] = commandTopic;
+
+  if (optimistic) doc["optimistic"] = true;
+  if (!icon.isEmpty()) doc["icon"] = icon;
+
+  doc["availability_topic"] = availability_topic;
+  doc["payload_available"] = "connected";
+  doc["payload_not_available"] = "connection lost";
+
+  JsonObject device = doc.createNestedObject("device");
+  JsonArray identifiers = device.createNestedArray("identifiers");
+  identifiers.add(deviceName);
+  device["name"] = deviceName;
+  device["model"] = deviceModel;
+  device["manufacturer"] = deviceManufacturer;
+
+  String payload;
+  serializeJson(doc, payload);
+  publishMessage(topic.c_str(), payload.c_str(), true);
+}
+
+// Create number discovery payload
+void publishMQTTNumberDiscovery(String name, String commandTopic, String stateTopic, float minValue, float maxValue, float step, String icon = "", String unit = "", bool optimistic = false) 
+{
+  String uniqueID = deviceName + "-" + removeSpaces(name);
+  String objectID = deviceName + "_" + removeSpaces(name);
+  String topic = "homeassistant/number/" + uniqueID + "/config";
+
+  DynamicJsonDocument doc(1024);
+  doc["name"] = name;
+  doc["unique_id"] = uniqueID;
+  doc["object_id"] = objectID;
+  doc["command_topic"] = commandTopic;
+  doc["state_topic"] = stateTopic;
+  doc["min"] = minValue;
+  doc["max"] = maxValue;
+  doc["step"] = step;
+  doc["retain"] = true;
+
+  if (!unit.isEmpty()) doc["unit_of_meas"] = unit;
+  if (!icon.isEmpty()) doc["icon"] = icon;
+  if (optimistic) doc["optimistic"] = true;
+
+  doc["availability_topic"] = availability_topic;
+  doc["payload_available"] = "connected";
+  doc["payload_not_available"] = "connection lost";
+
+  JsonObject device = doc.createNestedObject("device");
+  JsonArray identifiers = device.createNestedArray("identifiers");
+  identifiers.add(deviceName);
+  device["name"] = deviceName;
+  device["model"] = deviceModel;
+  device["manufacturer"] = deviceManufacturer;
+
+  String payload;
+  serializeJson(doc, payload);
+  publishMessage(topic.c_str(), payload.c_str(), true);
+}
+
+// Create climate discovery payload
+void publishMQTTClimateDiscovery(String name, String climate_temperature_current_topic, String climate_temperature_state_topic, String climate_temperature_command_topic, String climate_mode_state_topic, String ) 
 {
     // Construct IDs
-    String uniqueID = String(deviceName) + "-" + removeSpaces(name);
-    String objectID = String(deviceName) + "_" + removeSpaces(name);
+    String uniqueID = "climate-" + String(deviceName);
+    String objectID = "climate_" + String(deviceName);
     
     // Construct discovery topic
-    String topic = "homeassistant/" + deviceType + "/" + uniqueID + "/config";
+    String topic = "homeassistant/climate/" + uniqueID + "/config";
     
     // Create a JSON document
     DynamicJsonDocument doc(1024);  // Adjust the size if necessary
@@ -486,32 +719,26 @@ void publishMQTTSensorDiscovery(String name, String deviceType,	String icon, Str
     doc["name"] = name;
     doc["unique_id"] = uniqueID;
     doc["object_id"] = objectID;
-    doc["icon"] = icon;
-    doc["state_topic"] = stateTopic;
-    if(entityCategory != "")
-    {
-      doc["entity_category"] = entityCategory; 
-    }
-    if(unitOfMeasurement != "")
-    {
-      doc["unit_of_meas"] = unitOfMeasurement; 
-    }
-    if(deviceClass != "")
-    {
-      doc["device_class"] = deviceClass; 
-    }
-    if(stateClass != "")
-    {
-      doc["state_class"] = stateClass; 
-    }
-    if(displayPrecision != -1)
-    {
-      doc["suggested_display_precision"] = displayPrecision; 
-    }
     doc["availability_topic"] = availability_topic;
     doc["payload_available"] = "connected";
     doc["payload_not_available"] = "connection lost";
-    
+    doc["current_temperature_topic"] = climate_temperature_current_topic;
+    doc["temperature_state_topic"] = climate_temperature_state_topic;
+    doc["temperature_command_topic"] = climate_temperature_command_topic;
+    doc["mode_state_topic"] = climate_mode_state_topic;
+    doc["mode_command_topic"] = climate_mode_command_topic;
+    doc["min_temp"] = 12;
+    doc["max_temp"] = 30;
+    doc["temp_step"] = 1.0;
+    doc["precision"] = 0.1;
+    doc["retain"] = true;
+
+    JsonArray modes = doc.createNestedArray("modes");
+      modes.add("off");
+      modes.add("heat");
+      modes.add("cool");
+      modes.add("auto");
+
     // Add the device object
     JsonObject device = doc.createNestedObject("device");
     JsonArray identifiers = device.createNestedArray("identifiers");
@@ -520,8 +747,6 @@ void publishMQTTSensorDiscovery(String name, String deviceType,	String icon, Str
     device["name"] = deviceName;
     device["model"] = deviceModel;
     device["manufacturer"] = deviceManufacturer;
-    // device["configuration_url"] = configurationUrl;
-    // device["sw_version"] = currentSwVersion;
 
     // Serialize the JSON document to a string
     String payload;
@@ -533,6 +758,96 @@ void publishMQTTSensorDiscovery(String name, String deviceType,	String icon, Str
     
     // Publish discovery message
     publishMessage(topic.c_str(), payload.c_str(), true);
+}
+
+// Create dynamic discovery payload
+void publishMQTTDiscoveryEntity(
+  String name,
+  String deviceType,
+  String stateTopic,
+  String commandTopic = "",
+  String icon = "",
+  String unitOfMeasurement = "",
+  String deviceClass = "",
+  String stateClass = "",
+  String entityCategory = "",
+  int displayPrecision = -1,
+  std::vector<String> options = {},       // for select
+  float minValue = NAN,                   // for number
+  float maxValue = NAN,
+  float stepValue = NAN,
+  bool optimistic = false                 // for button/number
+) {
+  String uniqueID = deviceName + "-" + removeSpaces(name);
+  String objectID = deviceName + "_" + removeSpaces(name);
+  String topic = "homeassistant/" + deviceType + "/" + uniqueID + "/config";
+
+  DynamicJsonDocument doc(2048);
+
+  // Common fields
+  doc["name"] = name;
+  doc["unique_id"] = uniqueID;
+  doc["object_id"] = objectID;
+  doc["state_topic"] = stateTopic;
+  if (!icon.isEmpty()) doc["icon"] = icon;
+  if (!entityCategory.isEmpty()) doc["entity_category"] = entityCategory;
+  if (!unitOfMeasurement.isEmpty()) doc["unit_of_meas"] = unitOfMeasurement;
+  if (!deviceClass.isEmpty()) doc["device_class"] = deviceClass;
+  if (!stateClass.isEmpty()) doc["state_class"] = stateClass;
+  if (displayPrecision != -1) doc["suggested_display_precision"] = displayPrecision;
+
+  doc["availability_topic"] = availability_topic;
+  doc["payload_available"] = "connected";
+  doc["payload_not_available"] = "connection lost";
+
+  // Type-specific configuration
+  if (deviceType == "switch") {
+    doc["command_topic"] = commandTopic;
+    doc["payload_on"] = "manual_on";
+    doc["payload_off"] = "auto";
+    doc["state_on"] = "manual_on";
+    doc["state_off"] = "auto";
+    doc["retain"] = true;
+  }
+  else if (deviceType == "select") {
+    doc["command_topic"] = commandTopic;
+    JsonArray opts = doc.createNestedArray("options");
+    for (const auto& opt : options) opts.add(opt);
+    doc["retain"] = true;
+  }
+  else if (deviceType == "binary_sensor") {
+    doc["payload_on"] = "ON";
+    doc["payload_off"] = "OFF";
+  }
+  else if (deviceType == "button") {
+    doc["command_topic"] = commandTopic;
+    if (optimistic) doc["optimistic"] = true;
+  }
+  else if (deviceType == "number") {
+    doc["command_topic"] = commandTopic;
+    if (!isnan(minValue)) doc["min"] = minValue;
+    if (!isnan(maxValue)) doc["max"] = maxValue;
+    if (!isnan(stepValue)) doc["step"] = stepValue;
+    doc["retain"] = true;
+    if (optimistic) doc["optimistic"] = true;
+  }
+
+  // Device block
+  JsonObject device = doc.createNestedObject("device");
+  JsonArray identifiers = device.createNestedArray("identifiers");
+  identifiers.add(deviceName);
+  device["name"] = deviceName;
+  device["model"] = deviceModel;
+  device["manufacturer"] = deviceManufacturer;
+
+  // Serialize and publish
+  String payload;
+  if (serializeJson(doc, payload) == 0) {
+    Serial.println("Failed to serialize MQTT discovery JSON!");
+    return;
+  }
+
+  publishMessage(topic.c_str(), payload.c_str(), true);
 }
 
 // Send discovery topics to Home Assistant
@@ -560,6 +875,28 @@ void sendDiscoveries()
   publishMQTTSensorDiscovery("Water Level (US)", "sensor", "mdi-car-coolant-level", "cm", "distance", "measurement", "", USsensor_topic, 1);
   delay(100);
   publishMQTTSensorDiscovery("Water Level (IR)", "sensor", "mdi-car-coolant-level", "cm", "distance", "measurement", "", IRsensor_topic, 1);
+  delay(100);
+  publishMQTTSensorDiscovery("Float Sensor", "binary_sensor", "mdi:waves-arrow-up", "", "problem", "", "", float_topic, -1);
+  delay(100);
+
+  // Binary Sensors
+  publishMQTTSensorDiscovery("Pump 1", pump1_topic, "mdi:pump", "moving");
+  delay(100);
+  publishMQTTSensorDiscovery("Pump 2", pump2_topic, "mdi:pump", "moving");
+  delay(100);
+  publishMQTTSensorDiscovery("LED", led_topic, "mdi:pump", "light");
+  delay(100);
+  publishMQTTSensorDiscovery("Fan", fan_topic, "mdi:pump","running");
+  delay(100);
+
+  // Numbers
+  publishMQTTNumberDiscovery("Pump Time", pump_time_command_topic, pump_time_state_topic, 1.0, 60.0, 1.0, "mdi:timer", "s", true);
+  delay(100);
+
+  // Switches
+  publishMQTTSwitchDiscovery("Pump1 Switch", pump1_command_topic, pump1_state_topic, "mdi:valve");
+  delay(100);
+  publishMQTTSwitchDiscovery("Pump2 Switch", pump2_command_topic, pump2_state_topic, "mdi:valve");
   delay(100);
 
   // Parameters
@@ -843,6 +1180,19 @@ void handleParameters(const String& jsonPayload)
     consoleLog("Parameters received and saved", 1);
 }
 
+// Handle pump manual commands received via MQTT
+void handlePumps(String message, int pumpID) 
+{
+  if (message == "manual on") 
+  {
+    pump(pumpID, true);
+  } 
+  else if (message == "manual off") 
+  {
+    pump(pumpID, false);
+  }
+}
+
 void pump(int pumpID, bool state)
 {  
     pumpStatus[pumpID] = state;
@@ -865,10 +1215,10 @@ void pump(int pumpID, bool state)
      switch (pumpID) 
      {
        case 1:
-          publishMessage(pump1_topic, pumpStatus[pumpID] ? "ON" : "OFF", false);
+          publishMessage(pump1_state_topic, pumpStatus[pumpID] ? "ON" : "OFF", true);
           break;
        case 2:
-          publishMessage(pump2_topic, pumpStatus[pumpID] ? "ON" : "OFF", false);
+          publishMessage(pump2_state_topic, pumpStatus[pumpID] ? "ON" : "OFF", true);
           break;
        default:
          // statements
