@@ -876,13 +876,13 @@ void sendDiscoveries()
   delay(100);
 	publishMQTTSensorDiscovery("IP Address", ip_topic, "mdi:ip-network-outline", "", "", "", "diagnostic", -1);
   delay(100);
-  publishMQTTSensorDiscovery("WiFi Strength", wifi_strength_topic, "mdi-rss", "", "", "", "diagnostic", -1);
+  publishMQTTSensorDiscovery("WiFi Strength", wifi_strength_topic, "mdi:access-point", "", "", "", "diagnostic", -1);
   delay(100);
 
   // Sensors
-  publishMQTTSensorDiscovery("Water Level (US)", USsensor_topic, "mdi-car-coolant-level", "cm", "distance", "measurement", "", 1);
+  publishMQTTSensorDiscovery("US Sensor", USsensor_topic, "mdi:storage-tank-outline", "cm", "distance", "measurement", "", 1);
   delay(100);
-  publishMQTTSensorDiscovery("Water Level (IR)", IRsensor_topic, "mdi-car-coolant-level", "cm", "distance", "measurement", "", 1);
+  publishMQTTSensorDiscovery("IR Sensor", IRsensor_topic, "mdi:storage-tank-outline", "cm", "distance", "measurement", "", 1);
   delay(100);
   publishMQTTSensorDiscovery("Float Sensor", float_topic, "mdi:waves-arrow-up", "", "problem", "", "", -1);
   delay(100);
