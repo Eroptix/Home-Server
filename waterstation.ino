@@ -183,6 +183,10 @@ String pump1_command_topic =                String("home/") + deviceName + Strin
 String pump2_state_topic =                  String("home/") + deviceName + String("/pumps/pump2/state");
 String pump2_command_topic =                String("home/") + deviceName + String("/pumps/pump2/command");
 
+// Select
+String sensor_mode_command_topic =          String("home/") + deviceName + String("/mode/command");
+String sensor_mode_state_topic =            String("home/") + deviceName + String("/mode/state");
+
 // Parameters
 String refreshRate_topic =                  String("home/") + deviceName + String("/parameters/refreshRate");
 
@@ -254,7 +258,11 @@ void mqttCallback(char* topic, byte* payload, unsigned int length)
   }
   else if (String(topic) == pump1_command_topic) 
   {
-    handlePumps(message, 1)
+    handlePumps(message, 1);
+  }
+  else if (String(topic) == pump2_command_topic) 
+  {
+    handlePumps(message, 2);
   }
   else
   {
@@ -491,8 +499,8 @@ String removeSpaces(String input)
 // Create sensor discovery payload
 void publishMQTTSensorDiscovery(String name, String stateTopic, String icon = "", String unitOfMeasurement = "", String deviceClass = "", String stateClass = "", String entityCategory = "", int displayPrecision = -1) 
 {
-  String uniqueID = deviceName + "-" + removeSpaces(name);
-  String objectID = deviceName + "_" + removeSpaces(name);
+  String uniqueID = String(deviceName) + "-" + removeSpaces(name);
+  String objectID = String(deviceName) + "_" + removeSpaces(name);
   String topic = "homeassistant/sensor/" + uniqueID + "/config";
 
   DynamicJsonDocument doc(1024);
@@ -527,8 +535,8 @@ void publishMQTTSensorDiscovery(String name, String stateTopic, String icon = ""
 // Create binary sensor discovery payload
 void publishMQTTBinarySensorDiscovery(String name, String stateTopic, String icon = "", String deviceClass = "", String entityCategory = "") 
 {
-  String uniqueID = deviceName + "-" + removeSpaces(name);
-  String objectID = deviceName + "_" + removeSpaces(name);
+  String uniqueID = String(deviceName) + "-" + removeSpaces(name);
+  String objectID = String(deviceName) + "_" + removeSpaces(name);
   String topic = "homeassistant/binary_sensor/" + uniqueID + "/config";
 
   DynamicJsonDocument doc(1024);
@@ -562,8 +570,8 @@ void publishMQTTBinarySensorDiscovery(String name, String stateTopic, String ico
 // Create switch discovery payload
 void publishMQTTSwitchDiscovery(String name, String commandTopic, String stateTopic, String icon = "") 
 {
-  String uniqueID = deviceName + "-" + removeSpaces(name);
-  String objectID = deviceName + "_" + removeSpaces(name);
+  String uniqueID = String(deviceName) + "-" + removeSpaces(name);
+  String objectID = String(deviceName) + "_" + removeSpaces(name);
   String topic = "homeassistant/switch/" + uniqueID + "/config";
 
   DynamicJsonDocument doc(1024);
@@ -599,8 +607,8 @@ void publishMQTTSwitchDiscovery(String name, String commandTopic, String stateTo
 // Create select discovery payload
 void publishMQTTSelectDiscovery(String name, String commandTopic, String stateTopic, std::vector<String> options, String icon = "") 
 {
-  String uniqueID = deviceName + "-" + removeSpaces(name);
-  String objectID = deviceName + "_" + removeSpaces(name);
+  String uniqueID = String(deviceName) + "-" + removeSpaces(name);
+  String objectID = String(deviceName) + "_" + removeSpaces(name);
   String topic = "homeassistant/select/" + uniqueID + "/config";
 
   DynamicJsonDocument doc(1024);
@@ -635,8 +643,8 @@ void publishMQTTSelectDiscovery(String name, String commandTopic, String stateTo
 // Create button discovery payload
 void publishMQTTButtonDiscovery(String name, String commandTopic, String icon = "", bool optimistic = false) 
 {
-  String uniqueID = deviceName + "-" + removeSpaces(name);
-  String objectID = deviceName + "_" + removeSpaces(name);
+  String uniqueID = String(deviceName) + "-" + removeSpaces(name);
+  String objectID = String(deviceName) + "_" + removeSpaces(name);
   String topic = "homeassistant/button/" + uniqueID + "/config";
 
   DynamicJsonDocument doc(1024);
@@ -667,8 +675,8 @@ void publishMQTTButtonDiscovery(String name, String commandTopic, String icon = 
 // Create number discovery payload
 void publishMQTTNumberDiscovery(String name, String commandTopic, String stateTopic, float minValue, float maxValue, float step, String icon = "", String unit = "", bool optimistic = false) 
 {
-  String uniqueID = deviceName + "-" + removeSpaces(name);
-  String objectID = deviceName + "_" + removeSpaces(name);
+  String uniqueID = String(deviceName) + "-" + removeSpaces(name);
+  String objectID = String(deviceName) + "_" + removeSpaces(name);
   String topic = "homeassistant/number/" + uniqueID + "/config";
 
   DynamicJsonDocument doc(1024);
@@ -703,7 +711,7 @@ void publishMQTTNumberDiscovery(String name, String commandTopic, String stateTo
 }
 
 // Create climate discovery payload
-void publishMQTTClimateDiscovery(String name, String climate_temperature_current_topic, String climate_temperature_state_topic, String climate_temperature_command_topic, String climate_mode_state_topic, String ) 
+void publishMQTTClimateDiscovery(String name, String climate_temperature_current_topic, String climate_temperature_state_topic, String climate_temperature_command_topic, String climate_mode_state_topic, String climate_mode_command_topic ) 
 {
     // Construct IDs
     String uniqueID = "climate-" + String(deviceName);
@@ -778,8 +786,8 @@ void publishMQTTDiscoveryEntity(
   float stepValue = NAN,
   bool optimistic = false                 // for button/number
 ) {
-  String uniqueID = deviceName + "-" + removeSpaces(name);
-  String objectID = deviceName + "_" + removeSpaces(name);
+  String uniqueID = String(deviceName) + "-" + removeSpaces(name);
+  String objectID = String(deviceName) + "_" + removeSpaces(name);
   String topic = "homeassistant/" + deviceType + "/" + uniqueID + "/config";
 
   DynamicJsonDocument doc(2048);
@@ -854,29 +862,29 @@ void publishMQTTDiscoveryEntity(
 void sendDiscoveries()
 {
   // Diagnostics
-  publishMQTTSensorDiscovery("Up Time", "sensor","mdi:clock", "h", "duration", "total_increasing", "diagnostic", uptime_topic, 0);
+  publishMQTTSensorDiscovery("Up Time", uptime_topic,"mdi:clock", "h", "duration", "total_increasing", "diagnostic", 0);
   delay(100);
-	publishMQTTSensorDiscovery("OTA Status", "sensor", "mdi:update", "", "", "", "diagnostic", ota_status_topic, -1);
+	publishMQTTSensorDiscovery("OTA Status", ota_status_topic, "mdi:update", "", "", "", "diagnostic", -1);
   delay(100);
-	publishMQTTSensorDiscovery("Firmware Version", "sensor", "mdi:application-outline", "", "", "", "diagnostic", firmware_topic, -1);
+	publishMQTTSensorDiscovery("Firmware Version", firmware_topic, "mdi:application-outline", "", "", "", "diagnostic", -1);
   delay(100);
-	publishMQTTSensorDiscovery("Error", "sensor", "mdi:alert-circle-outline", "", "", "", "diagnostic", log_error_topic, -1);
+	publishMQTTSensorDiscovery("Error", log_error_topic, "mdi:alert-circle-outline", "", "", "", "diagnostic", -1);
   delay(100);
-	publishMQTTSensorDiscovery("Warning", "sensor", "mdi:shield-alert-outline", "", "", "", "diagnostic", log_warning_topic, -1);
+	publishMQTTSensorDiscovery("Warning", log_warning_topic, "mdi:shield-alert-outline", "", "", "", "diagnostic", -1);
   delay(100);
-	publishMQTTSensorDiscovery("Info", "sensor", "mdi:information-outline", "", "", "", "diagnostic", log_info_topic, -1);
+	publishMQTTSensorDiscovery("Info", log_info_topic, "mdi:information-outline", "", "", "", "diagnostic", -1);
   delay(100);
-	publishMQTTSensorDiscovery("IP Address", "sensor", "mdi:ip-network-outline", "", "", "", "diagnostic", ip_topic, -1);
+	publishMQTTSensorDiscovery("IP Address", ip_topic, "mdi:ip-network-outline", "", "", "", "diagnostic", -1);
   delay(100);
-  publishMQTTSensorDiscovery("WiFi Strength", "sensor", "mdi-rss", "", "", "", "diagnostic", wifi_strength_topic, -1);
+  publishMQTTSensorDiscovery("WiFi Strength", wifi_strength_topic, "mdi-rss", "", "", "", "diagnostic", -1);
   delay(100);
 
   // Sensors
-  publishMQTTSensorDiscovery("Water Level (US)", "sensor", "mdi-car-coolant-level", "cm", "distance", "measurement", "", USsensor_topic, 1);
+  publishMQTTSensorDiscovery("Water Level (US)", USsensor_topic, "mdi-car-coolant-level", "cm", "distance", "measurement", "", 1);
   delay(100);
-  publishMQTTSensorDiscovery("Water Level (IR)", "sensor", "mdi-car-coolant-level", "cm", "distance", "measurement", "", IRsensor_topic, 1);
+  publishMQTTSensorDiscovery("Water Level (IR)", IRsensor_topic, "mdi-car-coolant-level", "cm", "distance", "measurement", "", 1);
   delay(100);
-  publishMQTTSensorDiscovery("Float Sensor", "binary_sensor", "mdi:waves-arrow-up", "", "problem", "", "", float_topic, -1);
+  publishMQTTSensorDiscovery("Float Sensor", float_topic, "mdi:waves-arrow-up", "", "problem", "", "", -1);
   delay(100);
 
   // Binary Sensors
@@ -899,8 +907,11 @@ void sendDiscoveries()
   publishMQTTSwitchDiscovery("Pump2 Switch", pump2_command_topic, pump2_state_topic, "mdi:valve");
   delay(100);
 
+  // Select
+  publishMQTTSelectDiscovery("Measurement Strategy", sensor_mode_command_topic, sensor_mode_state_topic,{ "ultrasonic", "infrared", "average", "adaptive" },"mdi:tune");
+
   // Parameters
-  publishMQTTSensorDiscovery("Refresh Rate", "sensor", "mdi:refresh", "", "", "", "diagnostic", refreshRate_topic, 0);
+  publishMQTTSensorDiscovery("Refresh Rate", refreshRate_topic, "mdi:refresh", "", "", "", "diagnostic", 0);
   delay(100);
 }
 
