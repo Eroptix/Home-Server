@@ -117,6 +117,8 @@ int pumpPin[] = {99, pumpOnePin, pumpTwoPin, 99, 99, 99, 99};
   
 // Refresh loop parameters
 int refreshRate = 5000;                             // Measurement loop length
+int refreshLoop = 1;                                // Number of refresh loops
+double upTime = 0;
 unsigned long previousMillis1 = 0;
 unsigned long previousMillisMQTT = 0;               // MQTT reconnect timing
 unsigned long previousMillisWiFi = 0;               // WiFi reconnect timing
@@ -1049,14 +1051,23 @@ void loop(void)
   { 
     previousMillis1 = currentMillis;
 
+    // Uptime calculation
+    refreshLoop++;
+    upTime = (refreshLoop * refreshRate) / 60; // Return uptime in minutes
+    Serial.print("Loop Number: ");
+    Serial.println(refreshLoop);
+
+    // Diagnostics
+    wifiStrength = WiFi.RSSI();
+    
     // Read sensors
     double USlevel = readLevelUltrasonic(5);
     double IRlevel = readLevelInfrared(5);
     bool floatSensor = readFloatSensor();
 
     // Send diagnostics to Home Assistant
-    publishMessage(wifi_strength_topic, 5, false);
-    publishMessage(uptime_topic, 5, false);
+    publishMessage(wifi_strength_topic, (double)wifiStrength, false);
+    publishMessage(uptime_topic, upTime, false);
 
     // Send telemetry to Home Assistant
     publishMessage(USsensor_topic, USlevel, false);
