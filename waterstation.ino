@@ -1059,6 +1059,13 @@ void loop(void)
 
     // Diagnostics
     wifiStrength = WiFi.RSSI();
+    Serial.print("  WiFi Strength: ");
+    Serial.print(wifiStrength);
+    Serial.println(" db");
+    float temp_c = (temprature_sens_read() - 32) / 1.8;
+    Serial.print("  Chip Temperature: ");
+    Serial.print(temp_c);
+    Serial.println(" °C");
     
     // Read sensors
     double USlevel = readLevelUltrasonic(5);
