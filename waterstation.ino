@@ -27,7 +27,7 @@
 
 // Device-specific settings
 const char* deviceName = "waterstation";
-const char* currentSwVersion = "1.0.1";
+const char* currentSwVersion = "1.0.3";
 const char* deviceModel = "ESP32-NodeMCU";
 const char* deviceManufacturer = "BTM Engineering";
 String configurationUrl = "";
@@ -63,7 +63,10 @@ bool debugMode = false;
                                +-----------------------+         */
 
 // Outputs 
-const int UStriggerPin = 16;                            
+const int UStriggerPin = 16; 
+const int pumpOnePin = 27;
+const int pumpTwoPin = 26;
+const int floatPin = 19;                           
 
 // Inputs
 const int intAPin = 17;
@@ -93,8 +96,6 @@ const int IRsensorPin = 36;
                               +--------------+         */
 
 // Outputs                              
-const int pumpOnePin = 7;
-const int pumpTwoPin = 6;
 const int ledPin = 5;
 const int fanPin = 4;
 
@@ -886,17 +887,13 @@ void sendDiscoveries()
   delay(100);
   publishMQTTSensorDiscovery("IR Sensor", IRsensor_topic, "mdi:storage-tank-outline", "cm", "distance", "measurement", "", 1);
   delay(100);
-  publishMQTTSensorDiscovery("Float Sensor", float_topic, "mdi:waves-arrow-up", "", "problem", "", "", -1);
-  delay(100);
 
   // Binary Sensors
-  publishMQTTSensorDiscovery("Pump 1", pump1_topic, "mdi:pump", "moving");
+  publishMQTTBinarySensorDiscovery("LED", led_topic, "mdi:led-on", "light");
   delay(100);
-  publishMQTTSensorDiscovery("Pump 2", pump2_topic, "mdi:pump", "moving");
+  publishMQTTBinarySensorDiscovery("Fan", fan_topic, "mdi:fan","running");
   delay(100);
-  publishMQTTSensorDiscovery("LED", led_topic, "mdi:pump", "light");
-  delay(100);
-  publishMQTTSensorDiscovery("Fan", fan_topic, "mdi:pump","running");
+  publishMQTTBinarySensorDiscovery("Float Sensor", float_topic, "","problem");
   delay(100);
 
   // Numbers
@@ -904,9 +901,9 @@ void sendDiscoveries()
   delay(100);
 
   // Switches
-  publishMQTTSwitchDiscovery("Pump1 Switch", pump1_command_topic, pump1_state_topic, "mdi:valve");
+  publishMQTTSwitchDiscovery("Pump1", pump1_command_topic, pump1_state_topic, "mdi:valve");
   delay(100);
-  publishMQTTSwitchDiscovery("Pump2 Switch", pump2_command_topic, pump2_state_topic, "mdi:valve");
+  publishMQTTSwitchDiscovery("Pump2", pump2_command_topic, pump2_state_topic, "mdi:valve");
   delay(100);
 
   // Select
@@ -935,13 +932,20 @@ void setup(void)
   pinMode(IRsensorPin, INPUT);
   pinMode(USechoPin, INPUT);
   pinMode(UStriggerPin, OUTPUT);
+  pinMode(pumpOnePin, OUTPUT);
+  pinMode(pumpTwoPin, OUTPUT);
+  pinMode(floatPin, INPUT_PULLUP);
+
+  digitalWrite(pumpOnePin, LOW);
+  digitalWrite(pumpTwoPin, LOW);
+
+  Wire.begin();
+  scanI2CDevices(); // Check if MCP23017 responds
 
   // Initialize I2C and MCP23017
   mcp.begin_I2C(); // 0 = address 0x20 (A0-A2 = GND)
 
   // Initialize MCP23017 pins
-  mcp.pinMode(pumpOnePin, OUTPUT);
-  mcp.pinMode(pumpTwoPin, OUTPUT);
   mcp.pinMode(ledPin, OUTPUT);
   mcp.pinMode(fanPin, OUTPUT);
 
@@ -950,6 +954,10 @@ void setup(void)
   mcp.pinMode(soilThreePin, INPUT);
   mcp.pinMode(limitUpPin, INPUT);
   mcp.pinMode(limitDownPin, INPUT);
+
+
+  mcp.digitalWrite(ledPin, LOW);
+  mcp.digitalWrite(fanPin, LOW);
 
   //mcp.pullUp(1, HIGH);
 
@@ -1059,18 +1067,19 @@ void loop(void)
 
     // Diagnostics
     wifiStrength = WiFi.RSSI();
-    Serial.print("  WiFi Strength: ");
-    Serial.print(wifiStrength);
-    Serial.println(" db");
-    float temp_c = (temprature_sens_read() - 32) / 1.8;
-    Serial.print("  Chip Temperature: ");
-    Serial.print(temp_c);
-    Serial.println(" °C");
     
     // Read sensors
     double USlevel = readLevelUltrasonic(5);
     double IRlevel = readLevelInfrared(5);
     bool floatSensor = readFloatSensor();
+
+    Serial.println("Reading sensors:");
+    Serial.print("  US Level: ");
+    Serial.println(USlevel);
+    Serial.print("  IR Level: ");
+    Serial.println(IRlevel);
+    Serial.print("  Float Sensor: ");
+    Serial.println(floatSensor);
 
     // Send diagnostics to Home Assistant
     publishMessage(wifi_strength_topic, (double)wifiStrength, false);
@@ -1079,6 +1088,7 @@ void loop(void)
     // Send telemetry to Home Assistant
     publishMessage(USsensor_topic, USlevel, false);
     publishMessage(IRsensor_topic, IRlevel, false);
+    publishMessage(float_topic, floatSensor ? "ON" : "OFF", false);
   }
 
   // Add delay to the loop
@@ -1319,10 +1329,7 @@ double readLevelInfrared(int numAvg)
 
 bool readFloatSensor ()
 {
-  int switchState = digitalRead(limitUpPin);
-
-  Serial.print("Safety switch: ");
-  Serial.println(switchState);
+  int switchState = digitalRead(floatPin);
 
   return switchState;
 }
@@ -1364,6 +1371,38 @@ double getWaterLevel(int numAvg)
   if (prevLevel >= 0 && abs(level - prevLevel) > maxJump) {
     Serial.println("Sudden jump detected, using previous level instead.");
     return prevLevel;
+  }
+
+  prevLevel = level;
+  return level;
+}
+
+void scanI2CDevices() 
+{
+  byte error, address;
+  int nDevices = 0;
+
+  Serial.println("🔍 Scanning I2C bus...");
+  for (address = 1; address < 127; address++) {
+    Wire.beginTransmission(address);
+    error = Wire.endTransmission();
+
+    if (error == 0) {
+      Serial.print("✅ I2C device found at address 0x");
+      Serial.println(address, HEX);
+      nDevices++;
+    }
+    else if (error == 4) {
+      Serial.print("⚠️ Unknown error at 0x");
+      Serial.println(address, HEX);
+    }
+  }
+
+  if (nDevices == 0)
+    Serial.println("❌ No I2C devices found. Check wiring!");
+}
+
+
   }
 
   prevLevel = level;
