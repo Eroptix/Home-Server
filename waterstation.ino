@@ -27,7 +27,7 @@
 
 // Device-specific settings
 const char* deviceName = "waterstation";
-const char* currentSwVersion = "1.0.3";
+const char* currentSwVersion = "1.0.4";
 const char* deviceModel = "ESP32-NodeMCU";
 const char* deviceManufacturer = "BTM Engineering";
 String configurationUrl = "";
@@ -46,10 +46,10 @@ bool debugMode = false;
                         GPIO34 | [ ] |           | [ ] | GPIO03
                         GPIO35 | [ ] |           | [ ] | GPIO21 SDA 
                         GPIO32 | [ ] |           | [ ] | GND
-                        GPIO33 | [ ] |           | [ ] | GPIO19  
+                        GPIO33 | [ ] |           | [ ] | GPIO19 FLOAT  
                         GPIO25 | [ ] |___________| [ ] | GPIO18  
-                        GPIO26 | [ ]               [ ] | GPIO05  
-                        GPIO27 | [ ]               [ ] | GPIO17 ECHO 
+                  PUMP2 GPIO26 | [ ]               [ ] | GPIO05  
+                  PUMP1 GPIO27 | [ ]               [ ] | GPIO17 ECHO 
                    INTB GPIO14 | [ ]               [ ] | GPIO16 TRIGGER 
                         GPIO12 | [ ]               [ ] | GPIO04  
                            GND | [ ]               [ ] | GPIO00  
@@ -136,6 +136,8 @@ double calibUsB = 1;
 double calibIrA = 0;
 double calibIrB = 1;
 
+int pumpTime = 30;
+
 SharpIR sensor( SharpIR::GP2Y0A41SK0F, IRsensorPin );
 Adafruit_MCP23X17 mcp;
 
@@ -177,8 +179,10 @@ String soil3_topic =                        String("home/") + deviceName + Strin
 String float_topic =                        String("home/") + deviceName + String("/float");
 
 // Numbers
-String pump_time_state_topic =              String("home/") + deviceName + String("/pumps/time/state");
-String pump_time_command_topic =            String("home/") + deviceName + String("/pumps/time/command");
+String pump_time_state_topic =              String("home/") + deviceName + String("/parameters/pumpTime/state");
+String pump_time_command_topic =            String("home/") + deviceName + String("/parameters/pumpTime/command");
+String refresh_rate_command_topic =         String("home/") + deviceName + String("/parameters/refreshRate/command");
+String refresh_rate_state_topic =           String("home/") + deviceName + String("/parameters/refreshRate/state");
 
 // Switches
 String pump1_state_topic =                  String("home/") + deviceName + String("/pumps/pump1/state");
@@ -215,6 +219,7 @@ bool connectMQTT()
       subscribeTopic(pump1_command_topic);
       subscribeTopic(pump2_command_topic);
       subscribeTopic(pump_time_command_topic);
+      subscribeTopic(refresh_rate_command_topic);
 
       // Send discovery payload
 	    sendDiscoveries();
@@ -266,6 +271,14 @@ void mqttCallback(char* topic, byte* payload, unsigned int length)
   else if (String(topic) == pump2_command_topic) 
   {
     handlePumps(message, 2);
+  }
+  else if (String(topic) == pump_time_command_topic) 
+  {
+    handleParameter("pumpTime", message);
+  }
+  else if (String(topic) == refresh_rate_command_topic) 
+  {
+    handleParameter("refreshRate", message);
   }
   else
   {
@@ -939,28 +952,6 @@ void setup(void)
   digitalWrite(pumpOnePin, LOW);
   digitalWrite(pumpTwoPin, LOW);
 
-  Wire.begin();
-  scanI2CDevices(); // Check if MCP23017 responds
-
-  // Initialize I2C and MCP23017
-  mcp.begin_I2C(); // 0 = address 0x20 (A0-A2 = GND)
-
-  // Initialize MCP23017 pins
-  mcp.pinMode(ledPin, OUTPUT);
-  mcp.pinMode(fanPin, OUTPUT);
-
-  mcp.pinMode(soilOnePin, INPUT);
-  mcp.pinMode(soilTwoPin, INPUT);
-  mcp.pinMode(soilThreePin, INPUT);
-  mcp.pinMode(limitUpPin, INPUT);
-  mcp.pinMode(limitDownPin, INPUT);
-
-
-  mcp.digitalWrite(ledPin, LOW);
-  mcp.digitalWrite(fanPin, LOW);
-
-  //mcp.pullUp(1, HIGH);
-
   // Initalize ultrasonic sensor
   HCSR04.begin(UStriggerPin, USechoPin);
 
@@ -1069,8 +1060,8 @@ void loop(void)
     wifiStrength = WiFi.RSSI();
     
     // Read sensors
-    double USlevel = readLevelUltrasonic(5);
-    double IRlevel = readLevelInfrared(5);
+    double USlevel = readLevelUltrasonic();
+    double IRlevel = readLevelInfrared();
     bool floatSensor = readFloatSensor();
 
     Serial.println("Reading sensors:");
@@ -1189,6 +1180,26 @@ void handleCommands(String message)
 }
 
 // Handle parameters received via MQTT
+void handleParameter(String parameterName, String value) 
+{
+  if (parameterName == "pumpTime") 
+  {
+    pumpTime = value.toInt();
+  }
+  else if (parameterName == "refreshRate") 
+  {
+    refreshRate = value.toInt();
+  }
+  else 
+  {
+    consoleLog("Unknown parameter: " + parameterName, 2);
+    return;
+  }
+
+  consoleLog("Parameter '" + parameterName + "' set to " + value, 1);
+}
+
+// Handle parameters received via MQTT
 void handleParameters(const String& jsonPayload) 
 {
     // Create a JSON document (adjust size if needed)
@@ -1283,55 +1294,123 @@ void led(bool state)
     publishMessage(led_topic, statusLED ? "ON" : "OFF", false); 
 }
 
-double readLevelUltrasonic(int numAvg)
+double readLevelUltrasonic()
 {
-  double sumDistance = 0.0;
+  const int numSamples = 20;
+  const int numToDiscard = 4;
+  const int measurementDelay = 100;
+  double readings[numSamples];
+  int validCount = 0;
 
-  for (int i = 0; i < numAvg; ++i) 
+  // Take 20 measurements
+  for (int i = 0; i < numSamples; ++i) 
   {
     double* distances = HCSR04.measureDistanceCm();
     if (distances != nullptr) {
-      sumDistance += distances[0];
+      readings[validCount++] = distances[0];
     }
-    delay(100);
+    delay(measurementDelay);
   }
 
-  double average = sumDistance / numAvg;
+  // Check we have enough valid samples
+  if (validCount < (numSamples - 2 * numToDiscard)) {
+    Serial.println("Not enough valid ultrasonic samples!");
+    return -1.0;
+  }
+
+  // Sort readings in-place (simple bubble sort for small arrays)
+  for (int i = 0; i < validCount - 1; ++i) {
+    for (int j = 0; j < validCount - i - 1; ++j) {
+      if (readings[j] > readings[j + 1]) {
+        double temp = readings[j];
+        readings[j] = readings[j + 1];
+        readings[j + 1] = temp;
+      }
+    }
+  }
+
+  // Average after discarding outliers
+  double sum = 0.0;
+  for (int i = numToDiscard; i < validCount - numToDiscard; ++i) {
+    sum += readings[i];
+  }
+
+  double average = sum / (validCount - 2 * numToDiscard);
   double distance = calibUsB * average + calibUsA;
 
-  Serial.print("Ultrasonic distance: ");
+  Serial.print("Ultrasonic distance (filtered avg): ");
   Serial.print(distance);
   Serial.println(" cm");
 
   return distance;
 }
 
-double readLevelInfrared(int numAvg)
+double readLevelInfrared()
 {
-  double sumDistance = 0.0;
+  const int numSamples = 20;
+  const int numToDiscard = 4;
+  const int measurementDelay = 100;
+  double readings[numSamples];
+  int validCount = 0;
 
-  for (int i = 0; i < numAvg; ++i) 
+  // Take 20 measurements
+  for (int i = 0; i < numSamples; ++i) 
   {
     double reading = sensor.getDistance();
-    sumDistance += reading;
-    delay(100);
+    if (reading > 0) {  // Optional: basic sanity check
+      readings[validCount++] = reading;
+    }
+    delay(measurementDelay); 
   }
 
-  double average = sumDistance / numAvg;
+  // Check we have enough valid samples
+  if (validCount < (numSamples - 2 * numToDiscard)) {
+    Serial.println("Not enough valid infrared samples!");
+    return -1.0;
+  }
+
+  // Sort readings (bubble sort for simplicity)
+  for (int i = 0; i < validCount - 1; ++i) {
+    for (int j = 0; j < validCount - i - 1; ++j) {
+      if (readings[j] > readings[j + 1]) {
+        double temp = readings[j];
+        readings[j] = readings[j + 1];
+        readings[j + 1] = temp;
+      }
+    }
+  }
+
+  // Average after discarding outliers
+  double sum = 0.0;
+  for (int i = numToDiscard; i < validCount - numToDiscard; ++i) {
+    sum += readings[i];
+  }
+
+  double average = sum / (validCount - 2 * numToDiscard);
   double distance = calibIrB * average + calibIrA;
 
-  Serial.print("Infrared distance: ");
+  Serial.print("Infrared distance (filtered avg): ");
   Serial.print(distance);
   Serial.println(" cm");
 
   return distance;
 }
 
-bool readFloatSensor ()
+bool readFloatSensor()
 {
-  int switchState = digitalRead(floatPin);
+  const int debounceSamples = 10;
+  const int debounceDelay = 50;
+  int highCount = 0;
 
-  return switchState;
+  for (int i = 0; i < debounceSamples; ++i) {
+    if (digitalRead(floatPin) == HIGH) {
+      highCount++;
+    }
+    delay(debounceDelay);
+  }
+
+  // Consider sensor "ON" if majority of readings are HIGH
+  return (highCount > debounceSamples / 2);
 }
 
 double getWaterLevel(int numAvg)
