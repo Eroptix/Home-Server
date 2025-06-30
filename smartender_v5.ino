@@ -36,7 +36,7 @@ const char* deviceManufacturer = "BTM Engineering";
 String configurationUrl = "";
 String  firmwareUrl;
 String  latestSwVersion;
-bool debugMode = false;
+bool debugMode = true;
 
 // Pin layout
 /*                             +-----------------------+
@@ -98,6 +98,8 @@ int pumpPin[] = {99, pumpOnePin, pumpTwoPin, pumpThreePin, pumpFourPin, pumpFive
   
 // Refresh loop parameters
 int refreshRate = 5;                                // Measurement loop length
+int refreshLoop = 1;                                // Number of refresh loops
+double upTime = 0;
 unsigned long previousMillis1 = 0;
 const long period1 = refreshRate * 1000;
 unsigned long previousMillisMQTT = 0;               // MQTT reconnect timing
@@ -275,10 +277,6 @@ void mqttCallback(char* topic, byte* payload, unsigned int length)
   {
     updateFirmwareOTA(message);
   }
-  else if (String(topic) == parameter_response_topic) 
-  {
-    handleParameters(message);
-  }
   else if (String(topic) == command_topic) 
   {
     handleCommands(message);
@@ -322,6 +320,10 @@ void mqttCallback(char* topic, byte* payload, unsigned int length)
   else if (String(topic) == peltier_command_topic) 
   {
     handlePeltier(message);
+  }
+  else if (String(topic) == glass_weight_command_topic) 
+  {
+    handleParameter("glassWeight",message);
   }
   else
   {
@@ -1161,6 +1163,15 @@ void loop(void)
   if (!sleepMode && currentMillis - previousMillis1 >= period1) 
   { 
       previousMillis1 = currentMillis;
+
+      // Uptime calculation
+      refreshLoop++;
+      upTime = (refreshLoop * refreshRate) / 60; // Return uptime in minutes
+      Serial.print("Loop Number: ");
+      Serial.println(refreshLoop);
+
+      // Diagnostics
+      wifiStrength = WiFi.RSSI();
       
       standByWeight = readWeightSensor();
 
@@ -1174,6 +1185,10 @@ void loop(void)
         consoleLog("Ready to serve drinks", 1);
         readyToServe = true;
       }
+
+      // Send diagnostics to Home Assistant
+      publishMessage(wifi_strength_topic, (double)wifiStrength, false);
+      publishMessage(uptime_topic, upTime, false);
 
       // Refresh dashboard
       publishMessage(calibration_topic, (double)scaleCalibrationFactor, false);
@@ -1770,11 +1785,6 @@ void handleCommands(String message)
     consoleLog("Command received: Parameter Request", 1);
     requestParameters();
   }
-  else if (message == "send parameters") 
-  {
-    consoleLog("Command received: Parameter Send", 1);
-    sendParameters();
-  }
   else if (message == "send discoveries") 
   {
     consoleLog("Command received: Discovery Send", 1);
@@ -1794,6 +1804,21 @@ void handleCommands(String message)
   {
     consoleLog("Unknown command received", 2);
   }
+}
+
+void handleParameter(String parameterName, String value) 
+{
+  if (parameterName == "glassWeight") 
+  {
+    glassWeight = value.toInt();
+  }
+  else 
+  {
+    consoleLog("Unknown parameter: " + parameterName, 2);
+    return;
+  }
+
+  consoleLog("Parameter '" + parameterName + "' set to " + value, 1);
 }
 
 // Handle parameters received via MQTT
@@ -1932,7 +1957,7 @@ void handleDrinks(const String& jsonPayload)
   }
   else
   {
-    consoleLog("Not ready to serve drink, 2");
+    consoleLog("Not ready to serve drink", 2);
   }
 
 }
