@@ -313,36 +313,15 @@ void mqttCallback(char* topic, byte* payload, unsigned int length)
   }
   else if (String(topic) == motor_command_topic) 
   {
-    if (message == "manual on") 
-    {
-      motor(true);
-    } 
-    else if (message == "manual off") 
-    {
-      motor(false);
-    }
+    handleMotor(message);
   }
   else if (String(topic) == fan_command_topic) 
   {
-    if (message == "manual on") 
-    {
-      fan(true);
-    } 
-    else if (message == "manual off") 
-    {
-      fan(false);
-    }
+    handleFan(message);
   }
   else if (String(topic) == peltier_command_topic) 
   {
-    if (message == "manual on") 
-    {
-      peltier(true);
-    } 
-    else if (message == "manual off") 
-    {
-      peltier(false);
-    }
+    handlePeltier(message);
   }
   else
   {
@@ -1072,9 +1051,6 @@ void setup(void)
     client.loop();
     delay(50);
   }
-
-  // Verify received parameters
-  sendParameters();
 
   // Set OTA progress callback
   Update.onProgress([](unsigned int progress, unsigned int total) 
@@ -1971,5 +1947,44 @@ void handlePumps(String message, int pumpID)
   else if (message == "manual off") 
   {
     pump(pumpID, false);
+  }
+}
+
+// Handle peltier manual commands received via MQTT
+void handlePeltier(String message) 
+{
+  if (message == "manual on") 
+  {
+    peltier(true);
+  } 
+  else if (message == "manual off") 
+  {
+    peltier(false);
+  }
+}
+
+// Handle motor manual commands received via MQTT
+void handleMotor(String message) 
+{
+  if (message == "manual on") 
+  {
+    motor(true);
+  } 
+  else if (message == "manual off") 
+  {
+    motor(false);
+  }
+}
+
+// Handle fan manual commands received via MQTT
+void handleFan(String message) 
+{
+  if (message == "manual on") 
+  {
+    fan(true);
+  } 
+  else if (message == "manual off") 
+  {
+    fan(false);
   }
 }
