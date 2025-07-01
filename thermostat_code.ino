@@ -1004,7 +1004,7 @@ void sendDiscoveries()
   delay(100);
   publishMQTTNumberDiscovery("Off Temperature", offtemperature_command_topic, offtemperature_state_topic, 10, 30, 1.0, "mdi:thermometer-minus", "°C", true);
   delay(100);
-  publishMQTTNumberDiscovery("Control Range", tempcontrolrange_command_topic, tempoffset_state_topic, 0, 2, 0.01, "mdi:car-cruise-control", "°C", true);
+  publishMQTTNumberDiscovery("Control Range", tempcontrolrange_command_topic, tempoffset_state_topic, 0, 1, 0.01, "mdi:car-cruise-control", "°C", true);
   delay(100);
   publishMQTTNumberDiscovery("Safety Temperature", safetytemp_command_topic, safetytemp_state_topic, 10, 30, 1.0, "mdi:thermometer-check", "°C", true);
   delay(100);
