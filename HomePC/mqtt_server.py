@@ -509,6 +509,7 @@ def main():
     client.will_set(AVAILABILITY_TOPIC, "connection lost", retain=True)
 
     log("Starting MQTT Command Listener...")
+    log("Version 1.2.1")
 
     try:
         client.connect(MQTT_BROKER, MQTT_PORT, 60)
