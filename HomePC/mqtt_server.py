@@ -8,15 +8,20 @@ import json
 
 # === CONFIGURATION ===
 MQTT_BROKER = "192.168.0.241"
-MQTT_PORT = 1883
-BASE_COMMAND_TOPIC = "home/mini_pc/command/"
-BASE_RESPONSE_TOPIC = "home/mini_pc/response/"
-AVAILABILITY_TOPIC = "home/mini_pc/availability"
+MQTT_PORT = 1783
 
-# Device information for Home Assistant discovery
-DEVICE_NAME = "mini_pc"
-DEVICE_MODEL = "Mini PC Server"
-DEVICE_MANUFACTURER = "HomeLab"
+# Device information
+DEVICE_NAME = "homeserver"
+CURRENT_SW_VERSION = "1.0.0"
+DEVICE_MODEL = "Home PC Server"
+DEVICE_MANUFACTURER = "BTM Engineering"
+
+# Dynamic topic construction
+BASE_COMMAND_TOPIC = f"home/{DEVICE_NAME}/command/"
+BASE_RESPONSE_TOPIC = f"home/{DEVICE_NAME}/response/"
+PARAMETER_REQUEST_TOPIC = f"home/{DEVICE_NAME}/parameters/request"
+AVAILABILITY_TOPIC = f"home/{DEVICE_NAME}/available"
+PARAMETER_RESPONSE_TOPIC = f"home/{DEVICE_NAME}/parameters"
 
 BACKUP_SCRIPT_URL = "https://raw.githubusercontent.com/YourUsername/YourRepo/main/tools/backup.sh"
 BACKUP_SCRIPT_LOCAL = "./backup.sh"
@@ -24,24 +29,27 @@ MARYTTS_URL = "http://localhost:59125/process"
 DEFAULT_VOICE = "cmu-slt-hsmm"
 BT_DEVICE_MAC = "XX:XX:XX:XX:XX:XX"  # Replace this with your soundbar's MAC
 
+
 # === UTILITY FUNCTIONS ===
 def remove_spaces(text):
     """Remove spaces and convert to lowercase for entity IDs"""
     return text.replace(" ", "_").lower()
 
+
 def log(msg):
     """Simple logging function"""
     print(f"[LOG] {msg}")
 
+
 # === HOME ASSISTANT MQTT DISCOVERY FUNCTIONS ===
-def publish_mqtt_sensor_discovery(name, state_topic, icon="", unit_of_measurement="", 
-                                device_class="", state_class="", entity_category="", 
-                                display_precision=None):
+def publish_mqtt_sensor_discovery(name, state_topic, icon="", unit_of_measurement="",
+                                  device_class="", state_class="", entity_category="",
+                                  display_precision=None):
     """Create sensor discovery payload"""
     unique_id = f"{DEVICE_NAME}-{remove_spaces(name)}"
     object_id = f"{DEVICE_NAME}_{remove_spaces(name)}"
     config_topic = f"homeassistant/sensor/{unique_id}/config"
-    
+
     payload = {
         "name": name,
         "unique_id": unique_id,
@@ -57,7 +65,7 @@ def publish_mqtt_sensor_discovery(name, state_topic, icon="", unit_of_measuremen
             "manufacturer": DEVICE_MANUFACTURER
         }
     }
-    
+
     # Add optional parameters
     if icon: payload["icon"] = icon
     if unit_of_measurement: payload["unit_of_meas"] = unit_of_measurement
@@ -65,17 +73,18 @@ def publish_mqtt_sensor_discovery(name, state_topic, icon="", unit_of_measuremen
     if state_class: payload["state_class"] = state_class
     if entity_category: payload["entity_category"] = entity_category
     if display_precision is not None: payload["suggested_display_precision"] = display_precision
-    
+
     client.publish(config_topic, json.dumps(payload), retain=True)
     log(f"Published sensor discovery: {name}")
 
-def publish_mqtt_binary_sensor_discovery(name, state_topic, icon="", device_class="", 
-                                        entity_category=""):
+
+def publish_mqtt_binary_sensor_discovery(name, state_topic, icon="", device_class="",
+                                         entity_category=""):
     """Create binary sensor discovery payload"""
     unique_id = f"{DEVICE_NAME}-{remove_spaces(name)}"
     object_id = f"{DEVICE_NAME}_{remove_spaces(name)}"
     config_topic = f"homeassistant/binary_sensor/{unique_id}/config"
-    
+
     payload = {
         "name": name,
         "unique_id": unique_id,
@@ -93,21 +102,22 @@ def publish_mqtt_binary_sensor_discovery(name, state_topic, icon="", device_clas
             "manufacturer": DEVICE_MANUFACTURER
         }
     }
-    
+
     # Add optional parameters
     if icon: payload["icon"] = icon
     if device_class: payload["device_class"] = device_class
     if entity_category: payload["entity_category"] = entity_category
-    
+
     client.publish(config_topic, json.dumps(payload), retain=True)
     log(f"Published binary sensor discovery: {name}")
+
 
 def publish_mqtt_switch_discovery(name, command_topic, state_topic, icon=""):
     """Create switch discovery payload"""
     unique_id = f"{DEVICE_NAME}-{remove_spaces(name)}"
     object_id = f"{DEVICE_NAME}_{remove_spaces(name)}"
     config_topic = f"homeassistant/switch/{unique_id}/config"
-    
+
     payload = {
         "name": name,
         "unique_id": unique_id,
@@ -129,18 +139,19 @@ def publish_mqtt_switch_discovery(name, command_topic, state_topic, icon=""):
             "manufacturer": DEVICE_MANUFACTURER
         }
     }
-    
+
     if icon: payload["icon"] = icon
-    
+
     client.publish(config_topic, json.dumps(payload), retain=True)
     log(f"Published switch discovery: {name}")
+
 
 def publish_mqtt_select_discovery(name, command_topic, state_topic, options, icon=""):
     """Create select discovery payload"""
     unique_id = f"{DEVICE_NAME}-{remove_spaces(name)}"
     object_id = f"{DEVICE_NAME}_{remove_spaces(name)}"
     config_topic = f"homeassistant/select/{unique_id}/config"
-    
+
     payload = {
         "name": name,
         "unique_id": unique_id,
@@ -159,18 +170,19 @@ def publish_mqtt_select_discovery(name, command_topic, state_topic, options, ico
             "manufacturer": DEVICE_MANUFACTURER
         }
     }
-    
+
     if icon: payload["icon"] = icon
-    
+
     client.publish(config_topic, json.dumps(payload), retain=True)
     log(f"Published select discovery: {name}")
+
 
 def publish_mqtt_button_discovery(name, command_topic, icon="", optimistic=False):
     """Create button discovery payload"""
     unique_id = f"{DEVICE_NAME}-{remove_spaces(name)}"
     object_id = f"{DEVICE_NAME}_{remove_spaces(name)}"
     config_topic = f"homeassistant/button/{unique_id}/config"
-    
+
     payload = {
         "name": name,
         "unique_id": unique_id,
@@ -186,20 +198,21 @@ def publish_mqtt_button_discovery(name, command_topic, icon="", optimistic=False
             "manufacturer": DEVICE_MANUFACTURER
         }
     }
-    
+
     if optimistic: payload["optimistic"] = True
     if icon: payload["icon"] = icon
-    
+
     client.publish(config_topic, json.dumps(payload), retain=True)
     log(f"Published button discovery: {name}")
 
-def publish_mqtt_number_discovery(name, command_topic, state_topic, min_value, max_value, 
-                                step, icon="", unit="", optimistic=False):
+
+def publish_mqtt_number_discovery(name, command_topic, state_topic, min_value, max_value,
+                                  step, icon="", unit="", optimistic=False):
     """Create number discovery payload"""
     unique_id = f"{DEVICE_NAME}-{remove_spaces(name)}"
     object_id = f"{DEVICE_NAME}_{remove_spaces(name)}"
     config_topic = f"homeassistant/number/{unique_id}/config"
-    
+
     payload = {
         "name": name,
         "unique_id": unique_id,
@@ -220,21 +233,22 @@ def publish_mqtt_number_discovery(name, command_topic, state_topic, min_value, m
             "manufacturer": DEVICE_MANUFACTURER
         }
     }
-    
+
     if unit: payload["unit_of_meas"] = unit
     if icon: payload["icon"] = icon
     if optimistic: payload["optimistic"] = True
-    
+
     client.publish(config_topic, json.dumps(payload), retain=True)
     log(f"Published number discovery: {name}")
 
-def publish_mqtt_climate_discovery(name, current_temp_topic, temp_state_topic, 
-                                 temp_command_topic, mode_state_topic, mode_command_topic):
+
+def publish_mqtt_climate_discovery(name, current_temp_topic, temp_state_topic,
+                                   temp_command_topic, mode_state_topic, mode_command_topic):
     """Create climate discovery payload"""
     unique_id = f"climate-{DEVICE_NAME}"
     object_id = f"climate_{DEVICE_NAME}"
     config_topic = f"homeassistant/climate/{unique_id}/config"
-    
+
     payload = {
         "name": name,
         "unique_id": unique_id,
@@ -260,36 +274,38 @@ def publish_mqtt_climate_discovery(name, current_temp_topic, temp_state_topic,
             "manufacturer": DEVICE_MANUFACTURER
         }
     }
-    
+
     client.publish(config_topic, json.dumps(payload), retain=True)
     log(f"Published climate discovery: {name}")
+
 
 # === SETUP HOME ASSISTANT ENTITIES ===
 def setup_home_assistant_entities():
     """Setup all Home Assistant entities via MQTT discovery"""
     log("Setting up Home Assistant entities...")
-    
+
     # Buttons
-    publish_mqtt_button_discovery("Update Script", f"{BASE_COMMAND_TOPIC}update", 
-                                 icon="mdi:update", optimistic=True)
-    publish_mqtt_button_discovery("Run Backup", f"{BASE_COMMAND_TOPIC}backup", 
-                                 icon="mdi:backup-restore", optimistic=True)
-    publish_mqtt_button_discovery("Connect Bluetooth", f"{BASE_COMMAND_TOPIC}bluetooth/connect", 
-                                 icon="mdi:bluetooth-connect", optimistic=True)
-    publish_mqtt_button_discovery("Disconnect Bluetooth", f"{BASE_COMMAND_TOPIC}bluetooth/disconnect", 
-                                 icon="mdi:bluetooth-off", optimistic=True)
-    
+    publish_mqtt_button_discovery("Update Script", f"{BASE_COMMAND_TOPIC}update",
+                                  icon="mdi:update", optimistic=True)
+    publish_mqtt_button_discovery("Run Backup", f"{BASE_COMMAND_TOPIC}backup",
+                                  icon="mdi:backup-restore", optimistic=True)
+    publish_mqtt_button_discovery("Connect Bluetooth", f"{BASE_COMMAND_TOPIC}bluetooth/connect",
+                                  icon="mdi:bluetooth-connect", optimistic=True)
+    publish_mqtt_button_discovery("Disconnect Bluetooth", f"{BASE_COMMAND_TOPIC}bluetooth/disconnect",
+                                  icon="mdi:bluetooth-off", optimistic=True)
+
     # Sensors
-    publish_mqtt_sensor_discovery("Backup Status", f"{BASE_RESPONSE_TOPIC}backup/status", 
-                                 icon="mdi:backup-restore", entity_category="diagnostic")
-    publish_mqtt_sensor_discovery("Backup Log", f"{BASE_RESPONSE_TOPIC}backup/log", 
-                                 icon="mdi:text-box-outline", entity_category="diagnostic")
-    
+    publish_mqtt_sensor_discovery("Backup Status", f"{BASE_RESPONSE_TOPIC}backup/status",
+                                  icon="mdi:backup-restore", entity_category="diagnostic")
+    publish_mqtt_sensor_discovery("Backup Log", f"{BASE_RESPONSE_TOPIC}backup/log",
+                                  icon="mdi:text-box-outline", entity_category="diagnostic")
+
     # Binary Sensors
-    publish_mqtt_binary_sensor_discovery("MQTT Server Status", AVAILABILITY_TOPIC, 
-                                        icon="mdi:server", device_class="connectivity")
-    
+    publish_mqtt_binary_sensor_discovery("MQTT Server Status", AVAILABILITY_TOPIC,
+                                         icon="mdi:server", device_class="connectivity")
+
     log("Home Assistant entities setup complete")
+
 
 # === VERSION UPDATE ===
 def handle_self_update():
@@ -298,6 +314,7 @@ def handle_self_update():
     client.disconnect()
     exit(10)  # Special code to tell launcher to update
 
+
 # === SYSTEM BACKUP ===
 def publish_backup_status(status, log_msg=None):
     """Publish backup status to MQTT"""
@@ -305,44 +322,47 @@ def publish_backup_status(status, log_msg=None):
     if log_msg:
         client.publish(f"{BASE_RESPONSE_TOPIC}backup/log", log_msg, retain=True)
 
+
 def backup_thread():
     """Run backup in separate thread"""
     try:
         publish_backup_status("started")
         log("Downloading backup script...")
-        
+
         r = requests.get(BACKUP_SCRIPT_URL, timeout=15)
         if r.status_code != 200:
             error_msg = f"Download failed: HTTP {r.status_code}"
             publish_backup_status("failed", error_msg)
             return
-            
+
         with open(BACKUP_SCRIPT_LOCAL, "wb") as f:
             f.write(r.content)
         os.chmod(BACKUP_SCRIPT_LOCAL, 0o755)  # Make executable
-        
+
         publish_backup_status("running")
         log("Running backup script...")
-        
+
         proc = subprocess.run([BACKUP_SCRIPT_LOCAL], capture_output=True, text=True)
-        
+
         if proc.returncode == 0:
             publish_backup_status("success", proc.stdout)
             log("Backup completed successfully")
         else:
             publish_backup_status("failed", proc.stderr)
             log(f"Backup failed: {proc.stderr}")
-            
+
     except Exception as e:
         error_msg = str(e)
         publish_backup_status("failed", error_msg)
         log(f"Backup exception: {error_msg}")
+
 
 def handle_backup():
     """Start backup in background thread"""
     thread = threading.Thread(target=backup_thread)
     thread.daemon = True
     thread.start()
+
 
 # === TEXT TO SPEECH ===
 def generate_tts(text):
@@ -355,7 +375,7 @@ def generate_tts(text):
         "INPUT_TEXT": text,
         "VOICE": DEFAULT_VOICE,
     }
-    
+
     try:
         response = requests.get(MARYTTS_URL, params=params, timeout=10)
         if response.status_code == 200:
@@ -367,8 +387,9 @@ def generate_tts(text):
             log(f"MaryTTS error: {response.status_code}")
     except Exception as e:
         log(f"Exception in TTS: {e}")
-    
+
     return None
+
 
 def play_audio(file_path):
     """Play audio file and clean up"""
@@ -383,18 +404,20 @@ def play_audio(file_path):
         except OSError:
             pass
 
+
 def handle_tts(payload):
     """Handle TTS request"""
     log(f"TTS requested: {payload}")
     if not payload.strip():
         log("Empty TTS payload, ignoring")
         return
-        
+
     audio_file = generate_tts(payload)
     if audio_file:
         play_audio(audio_file)
     else:
         log("Failed to generate TTS audio")
+
 
 # === BLUETOOTH ===
 def btctl(command):
@@ -407,12 +430,14 @@ def btctl(command):
         log("Bluetooth command timed out")
         return None
 
+
 def handle_bluetooth_connect():
     """Connect to Bluetooth device"""
     log("Connecting to Bluetooth soundbar...")
     result = btctl(f"connect {BT_DEVICE_MAC}")
     if result:
         log(f"Bluetooth connect result: {result.stdout}")
+
 
 def handle_bluetooth_disconnect():
     """Disconnect from Bluetooth device"""
@@ -421,26 +446,29 @@ def handle_bluetooth_disconnect():
     if result:
         log(f"Bluetooth disconnect result: {result.stdout}")
 
+
 # === MQTT FUNCTIONS ===
 def on_connect(client, userdata, flags, rc):
     """Callback for MQTT connection"""
     if rc == 0:
         log("Connected to MQTT broker")
         client.subscribe(f"{BASE_COMMAND_TOPIC}#")
-        
+
         # Publish availability
         client.publish(AVAILABILITY_TOPIC, "connected", retain=True)
-        
+
         # Setup Home Assistant entities
         setup_home_assistant_entities()
-        
+
         log("MQTT setup complete")
     else:
         log(f"Failed to connect to MQTT broker, result code {rc}")
 
+
 def on_disconnect(client, userdata, rc):
     """Callback for MQTT disconnection"""
     log(f"Disconnected from MQTT broker, result code {rc}")
+
 
 def on_message(client, userdata, msg):
     """Callback for MQTT message reception"""
@@ -461,26 +489,27 @@ def on_message(client, userdata, msg):
             handle_backup()
         else:
             log(f"Unknown command topic: {topic}")
-            
+
     except Exception as e:
         log(f"Error processing message: {e}")
+
 
 # === MAIN EXECUTION ===
 def main():
     """Main function"""
     global client
-    
+
     # Setup MQTT client
     client = mqtt.Client()
     client.on_connect = on_connect
     client.on_disconnect = on_disconnect
     client.on_message = on_message
-    
+
     # Set will message for availability
     client.will_set(AVAILABILITY_TOPIC, "connection lost", retain=True)
-    
+
     log("Starting MQTT Command Listener...")
-    
+
     try:
         client.connect(MQTT_BROKER, MQTT_PORT, 60)
         client.loop_forever()
@@ -491,6 +520,7 @@ def main():
     except Exception as e:
         log(f"Fatal error: {e}")
         exit(1)
+
 
 if __name__ == "__main__":
     main()
