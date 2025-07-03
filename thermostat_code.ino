@@ -34,7 +34,7 @@
 
 // Device-specific settings
 const char* deviceName = "thermostat";
-const char* currentSwVersion = "1.4.3";
+const char* currentSwVersion = "1.5.0";
 const char* deviceModel = "ESP32-NodeMCU";
 const char* deviceManufacturer = "BTM Engineering";
 String configurationUrl = "";
