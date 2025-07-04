@@ -18,6 +18,7 @@ SCRIPT_PATH = "./mqtt_server.py"               # Where the live script will run
 CLONE_PATH = "./mqtt_repo_temp"                # Temporary clone directory
 SCRIPT_IN_REPO = "HomePC/mqtt_server.py"       # Path to script inside repo
 UPDATE_EXIT_CODE = 10                          # Used by agent to request update
+CURRENT_SW_VERSION = "1.0.0"
 
 # === LOGGING ===
 LOG_DIR = "./logs"
@@ -77,7 +78,7 @@ def update_script_via_git():
 
 def update_script_via_zip():
     """Update script by downloading ZIP archive"""
-    logging.info("Updating script from GitHub using ZIP download...")
+    logging.info("Updating script from GitHub using ZIP download")
 
     try:
         # Create temp directory for download
@@ -86,7 +87,7 @@ def update_script_via_zip():
             extract_path = os.path.join(temp_dir, "extracted")
 
             # Download ZIP file
-            logging.info("Downloading repository ZIP...")
+            logging.info("Downloading repository ZIP")
             response = requests.get(REPO_ZIP_URL, timeout=30)
             response.raise_for_status()
 
@@ -94,7 +95,7 @@ def update_script_via_zip():
                 f.write(response.content)
 
             # Extract ZIP file
-            logging.info("Extracting ZIP file...")
+            logging.info("Extracting ZIP file")
             with zipfile.ZipFile(zip_path, 'r') as zip_ref:
                 zip_ref.extractall(extract_path)
 
@@ -111,10 +112,10 @@ def update_script_via_zip():
 
             if os.path.exists(source_script):
                 shutil.copyfile(source_script, SCRIPT_PATH)
-                logging.info("Script updated successfully via ZIP download.")
+                logging.info("Script updated successfully via ZIP download")
                 return True
             else:
-                logging.error(f"Cannot find {source_script} in downloaded repository.")
+                logging.error(f"Cannot find {source_script} in downloaded repository")
                 return False
 
     except requests.RequestException as e:
@@ -130,16 +131,16 @@ def update_script_via_zip():
 
 def update_script():
     """Update script from GitHub - try git first, fallback to ZIP"""
-    logging.info("Checking for Git availability...")
+    logging.info("Checking for Git availability")
 
     if check_git_available():
-        logging.info("Git found, using git clone method...")
+        logging.info("Git found, using git clone method")
         if update_script_via_git():
             return True
         else:
-            logging.info("Git method failed, trying ZIP download...")
+            logging.info("Git method failed, trying ZIP download")
     else:
-        logging.info("Git not found in PATH, using ZIP download method...")
+        logging.info("Git not found in PATH, using ZIP download method")
 
     # Fallback to ZIP download
     return update_script_via_zip()
@@ -148,34 +149,34 @@ def update_script():
 def main_loop():
     """Main execution loop"""
     while True:
-        logging.info("Starting MQTT script...")
+        logging.info("Starting MQTT script")
 
         # Check if script exists
         if not os.path.exists(SCRIPT_PATH):
             logging.info(f"Script {SCRIPT_PATH} not found!")
-            logging.info("Attempting to download initial script...")
+            logging.info("Attempting to download initial script")
             if not update_script():
-                logging.info("Failed to download script. Exiting.")
+                logging.info("Failed to download script. Exiting")
                 break
 
         try:
             result = subprocess.run([sys.executable, SCRIPT_PATH])
 
             if result.returncode == UPDATE_EXIT_CODE:
-                logging.info("Script requested update. Pulling new version...")
+                logging.info("Script requested update. Pulling new version")
                 if update_script():
-                    logging.info("Update successful, restarting script...")
+                    logging.info("Update successful, restarting script")
                     time.sleep(2)
                 else:
-                    logging.info("Update failed, restarting with current version...")
+                    logging.info("Update failed, restarting with current version")
                     time.sleep(5)
             else:
                 logging.info(f"Script exited with code {result.returncode}.")
                 if result.returncode != 0:
-                    logging.info("Script crashed, restarting in 10 seconds...")
+                    logging.info("Script crashed, restarting in 10 seconds")
                     time.sleep(10)
                 else:
-                    logging.info("Script exited normally. Stopping launcher.")
+                    logging.info("Script exited normally. Stopping launcher")
                     break
 
         except KeyboardInterrupt:
@@ -183,23 +184,24 @@ def main_loop():
             break
         except Exception as e:
             logging.error(f"Error running script: {e}")
-            logging.info("Retrying in 10 seconds...")
+            logging.info("Retrying in 10 seconds")
             time.sleep(10)
 
 
 if __name__ == "__main__":
     logging.info("=" * 60)
-    logging.info("MQTT Server Launcher Starting...")
+    logging.info("MQTT Server Launcher Starting")
     logging.info(f"Python version: {sys.version}")
+    logging.info(f"SW version: {CURRENT_SW_VERSION}")
     logging.info(f"Script path: {SCRIPT_PATH}")
     logging.info(f"Repository: {REPO_URL}")
 
     try:
         main_loop()
     except KeyboardInterrupt:
-        logging.info("Launcher stopped by user.")
+        logging.info("Launcher stopped by user")
     except Exception as e:
         logging.error(f"Fatal error: {e}")
         sys.exit(1)
 
-    logging.info("Launcher exiting.")
+    logging.info("Launcher exiting")

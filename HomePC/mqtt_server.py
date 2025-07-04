@@ -282,7 +282,7 @@ def publish_mqtt_climate_discovery(name, current_temp_topic, temp_state_topic,
 # === SETUP HOME ASSISTANT ENTITIES ===
 def setup_home_assistant_entities():
     """Setup all Home Assistant entities via MQTT discovery"""
-    log("Setting up Home Assistant entities...")
+    log("Setting up Home Assistant entities")
 
     # Buttons
     publish_mqtt_button_discovery("Update Script", f"{BASE_COMMAND_TOPIC}update",
@@ -327,7 +327,7 @@ def backup_thread():
     """Run backup in separate thread"""
     try:
         publish_backup_status("started")
-        log("Downloading backup script...")
+        log("Downloading backup script")
 
         r = requests.get(BACKUP_SCRIPT_URL, timeout=15)
         if r.status_code != 200:
@@ -340,7 +340,7 @@ def backup_thread():
         os.chmod(BACKUP_SCRIPT_LOCAL, 0o755)  # Make executable
 
         publish_backup_status("running")
-        log("Running backup script...")
+        log("Running backup script")
 
         proc = subprocess.run([BACKUP_SCRIPT_LOCAL], capture_output=True, text=True)
 
@@ -433,7 +433,7 @@ def btctl(command):
 
 def handle_bluetooth_connect():
     """Connect to Bluetooth device"""
-    log("Connecting to Bluetooth soundbar...")
+    log("Connecting to Bluetooth soundbar")
     result = btctl(f"connect {BT_DEVICE_MAC}")
     if result:
         log(f"Bluetooth connect result: {result.stdout}")
@@ -441,7 +441,7 @@ def handle_bluetooth_connect():
 
 def handle_bluetooth_disconnect():
     """Disconnect from Bluetooth device"""
-    log("Disconnecting from Bluetooth soundbar...")
+    log("Disconnecting from Bluetooth soundbar")
     result = btctl(f"disconnect {BT_DEVICE_MAC}")
     if result:
         log(f"Bluetooth disconnect result: {result.stdout}")
@@ -508,14 +508,14 @@ def main():
     # Set will message for availability
     client.will_set(AVAILABILITY_TOPIC, "connection lost", retain=True)
 
-    log("Starting MQTT Command Listener...")
-    log("Version 1.2.3")
+    log("Starting MQTT Command Listener")
+    log(f"Version: {CURRENT_SW_VERSION}")
 
     try:
         client.connect(MQTT_BROKER, MQTT_PORT, 60)
         client.loop_forever()
     except KeyboardInterrupt:
-        log("Shutting down...")
+        log("Shutting down")
         client.publish(AVAILABILITY_TOPIC, "connection lost", retain=True)
         client.disconnect()
     except Exception as e:
