@@ -6,7 +6,7 @@ import subprocess
 import threading
 import json
 
-# === CONFIGURATION ===
+# MQTT settings
 MQTT_BROKER = "192.168.0.241"
 MQTT_PORT = 1783
 
@@ -23,11 +23,16 @@ PARAMETER_REQUEST_TOPIC = f"home/{DEVICE_NAME}/parameters/request"
 AVAILABILITY_TOPIC = f"home/{DEVICE_NAME}/available"
 PARAMETER_RESPONSE_TOPIC = f"home/{DEVICE_NAME}/parameters"
 
+# Backup script 
 BACKUP_SCRIPT_URL = "https://raw.githubusercontent.com/YourUsername/YourRepo/main/tools/backup.sh"
 BACKUP_SCRIPT_LOCAL = "./backup.sh"
+
+# TTS settings
 MARYTTS_URL = "http://localhost:59125/process"
 DEFAULT_VOICE = "cmu-slt-hsmm"
-BT_DEVICE_MAC = "XX:XX:XX:XX:XX:XX"  # Replace this with your soundbar's MAC
+
+# Bluetooth device addresses
+BT_SOUNDBAR_MAC = "XX:XX:XX:XX:XX:XX"
 
 
 # === UTILITY FUNCTIONS ===
