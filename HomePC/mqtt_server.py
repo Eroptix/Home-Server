@@ -477,43 +477,41 @@ def handle_self_update():
 # === SYSTEM BACKUP ===
 def publish_backup_status(status, log_msg=None):
     """Publish backup status to MQTT"""
-    client.publish(f"{BASE_RESPONSE_TOPIC}backup/status", status, retain=True)
-    if log_msg:
-        client.publish(f"{BASE_RESPONSE_TOPIC}backup/log", log_msg, retain=True)
+    client.publish(BACKUP_STATUS_TOPIC, status, retain=True)
 
 
 def backup_thread():
     """Run backup in separate thread"""
     try:
-        publish_backup_status("started")
+        publish_backup_status("STARTED")
         log("Downloading backup script")
 
         r = requests.get(BACKUP_SCRIPT_URL, timeout=15)
         if r.status_code != 200:
             error_msg = f"Download failed: HTTP {r.status_code}"
             log(f"Download failed: HTTP {r.status_code}", "error")
-            publish_backup_status("failed", error_msg)
+            publish_backup_status("FAILED")
             return
 
         with open(BACKUP_SCRIPT_LOCAL, "wb") as f:
             f.write(r.content)
         os.chmod(BACKUP_SCRIPT_LOCAL, 0o755)  # Make executable
 
-        publish_backup_status("running")
+        publish_backup_status("RUNNING")
         log("Running backup script")
 
         proc = subprocess.run([BACKUP_SCRIPT_LOCAL], capture_output=True, text=True)
 
         if proc.returncode == 0:
-            publish_backup_status("success", proc.stdout)
+            publish_backup_status("DONE")
             log("Backup completed successfully")
         else:
-            publish_backup_status("failed", proc.stderr)
+            publish_backup_status("FAILED")
             log(f"Backup failed: {proc.stderr}", "error")
 
     except Exception as e:
         error_msg = str(e)
-        publish_backup_status("failed", error_msg)
+        publish_backup_status("FAILED")
         log(f"Backup exception: {error_msg}", "error")
 
 
@@ -640,13 +638,13 @@ def on_message(client, userdata, msg):
 
         if topic == f"{BASE_COMMAND_TOPIC}tts":
             handle_tts(payload)
-        elif topic == f"{BASE_COMMAND_TOPIC}bluetooth/connect":
+        elif topic == BLUETOOTH_CONNECT_TOPIC:
             handle_bluetooth_connect()
-        elif topic == f"{BASE_COMMAND_TOPIC}bluetooth/disconnect":
+        elif topic == BLUETOOTH_DISCONNECT_TOPIC:
             handle_bluetooth_disconnect()
-        elif topic == f"{BASE_COMMAND_TOPIC}update":
+        elif topic == UPDATE_TOPIC:
             handle_self_update()
-        elif topic == f"{BASE_COMMAND_TOPIC}backup":
+        elif topic == BACKUP_RUN_TOPIC:
             handle_backup()
         elif topic == f"{BASE_COMMAND_TOPIC}audio/play":
             handle_backup()
