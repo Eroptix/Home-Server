@@ -6,19 +6,32 @@ import subprocess
 import threading
 import json
 import logging
+from logging.handlers import RotatingFileHandler
 
-# Logging setup
+# === Logging Setup with Rotation ===
 LOG_DIR = "./logs"
 LOG_FILE = os.path.join(LOG_DIR, "mqtt_server.log")
 os.makedirs(LOG_DIR, exist_ok=True)
 
+# Set up rotating handler
+rotating_handler = RotatingFileHandler(
+    LOG_FILE,
+    maxBytes=1 * 1024 * 1024,  # 1 MB
+    backupCount=5
+)
+
+# Format logs
+formatter = logging.Formatter("%(asctime)s [%(levelname)s] %(message)s")
+rotating_handler.setFormatter(formatter)
+
+# Add console handler
+console_handler = logging.StreamHandler()
+console_handler.setFormatter(formatter)
+
+# Configure root logger
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s",
-    handlers=[
-        logging.FileHandler(LOG_FILE),
-        logging.StreamHandler()
-    ]
+    handlers=[rotating_handler, console_handler]
 )
 
 def log(msg, level="info"):
