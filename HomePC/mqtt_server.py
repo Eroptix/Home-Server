@@ -600,7 +600,7 @@ def handle_tts(payload):
 
     audio_file = generate_tts(payload)
     if audio_file:
-        play_audio(audio_file)
+        play_audio(audio_file, False)
     else:
         log("Failed to generate TTS audio", "error")
 
