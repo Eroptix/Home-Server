@@ -5,6 +5,34 @@ import os
 import subprocess
 import threading
 import json
+import logging
+
+# Logging setup
+LOG_DIR = "./logs"
+LOG_FILE = os.path.join(LOG_DIR, "mqtt_server.log")
+os.makedirs(LOG_DIR, exist_ok=True)
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    handlers=[
+        logging.FileHandler(LOG_FILE),
+        logging.StreamHandler()
+    ]
+)
+
+def log(msg, level="info"):
+    """Unified logger wrapper"""
+    if level == "info":
+        logging.info(msg)
+    elif level == "error":
+        logging.error(msg)
+    elif level == "warning":
+        logging.warning(msg)
+    elif level == "debug":
+        logging.debug(msg)
+    else:
+        logging.info(msg)
 
 # MQTT settings
 MQTT_BROKER = "192.168.0.241"
@@ -39,12 +67,6 @@ BT_SOUNDBAR_MAC = "XX:XX:XX:XX:XX:XX"
 def remove_spaces(text):
     """Remove spaces and convert to lowercase for entity IDs"""
     return text.replace(" ", "_").lower()
-
-
-def log(msg):
-    """Simple logging function"""
-    print(f"[LOG] {msg}")
-
 
 # === HOME ASSISTANT MQTT DISCOVERY FUNCTIONS ===
 def publish_mqtt_sensor_discovery(name, state_topic, icon="", unit_of_measurement="",
@@ -336,6 +358,7 @@ def backup_thread():
         r = requests.get(BACKUP_SCRIPT_URL, timeout=15)
         if r.status_code != 200:
             error_msg = f"Download failed: HTTP {r.status_code}"
+            log(f"Download failed: HTTP {r.status_code}", "error")
             publish_backup_status("failed", error_msg)
             return
 
@@ -353,12 +376,12 @@ def backup_thread():
             log("Backup completed successfully")
         else:
             publish_backup_status("failed", proc.stderr)
-            log(f"Backup failed: {proc.stderr}")
+            log(f"Backup failed: {proc.stderr}", "error")
 
     except Exception as e:
         error_msg = str(e)
         publish_backup_status("failed", error_msg)
-        log(f"Backup exception: {error_msg}")
+        log(f"Backup exception: {error_msg}", "error")
 
 
 def handle_backup():
@@ -379,6 +402,7 @@ def generate_tts(text):
         "INPUT_TEXT": text,
         "VOICE": DEFAULT_VOICE,
     }
+    log(f"Generating TTS audio file: {text}")
 
     try:
         response = requests.get(MARYTTS_URL, params=params, timeout=10)
@@ -388,9 +412,9 @@ def generate_tts(text):
             tmpfile.close()
             return tmpfile.name
         else:
-            log(f"MaryTTS error: {response.status_code}")
+            log(f"MaryTTS error: {response.status_code}","error")
     except Exception as e:
-        log(f"Exception in TTS: {e}")
+        log(f"Exception in TTS: {e}","error")
 
     return None
 
@@ -401,7 +425,7 @@ def play_audio(file_path):
         subprocess.run(["aplay", file_path], check=True)
         log(f"Audio played: {file_path}")
     except subprocess.CalledProcessError as e:
-        log(f"Audio playback failed: {e}")
+        log(f"Audio playback failed: {e}","error")
     finally:
         try:
             os.remove(file_path)
@@ -413,14 +437,14 @@ def handle_tts(payload):
     """Handle TTS request"""
     log(f"TTS requested: {payload}")
     if not payload.strip():
-        log("Empty TTS payload, ignoring")
+        log("Empty TTS payload, ignoring","warning")
         return
 
     audio_file = generate_tts(payload)
     if audio_file:
         play_audio(audio_file)
     else:
-        log("Failed to generate TTS audio")
+        log("Failed to generate TTS audio", "error")
 
 
 # === BLUETOOTH ===
@@ -431,7 +455,7 @@ def btctl(command):
         result = subprocess.run(full_command, shell=True, capture_output=True, text=True, timeout=10)
         return result
     except subprocess.TimeoutExpired:
-        log("Bluetooth command timed out")
+        log("Bluetooth command timed out", "error")
         return None
 
 
@@ -440,7 +464,7 @@ def handle_bluetooth_connect():
     log("Connecting to Bluetooth soundbar")
     result = btctl(f"connect {BT_DEVICE_MAC}")
     if result:
-        log(f"Bluetooth connect result: {result.stdout}")
+        log(f"Bluetooth connect result: {result.stdout}", "error")
 
 
 def handle_bluetooth_disconnect():
@@ -448,7 +472,7 @@ def handle_bluetooth_disconnect():
     log("Disconnecting from Bluetooth soundbar")
     result = btctl(f"disconnect {BT_DEVICE_MAC}")
     if result:
-        log(f"Bluetooth disconnect result: {result.stdout}")
+        log(f"Bluetooth disconnect result: {result.stdout}", "error")
 
 
 # === MQTT FUNCTIONS ===
@@ -466,12 +490,12 @@ def on_connect(client, userdata, flags, rc):
 
         log("MQTT setup complete")
     else:
-        log(f"Failed to connect to MQTT broker, result code {rc}")
+        log(f"Failed to connect to MQTT broker, result code {rc}", "error")
 
 
 def on_disconnect(client, userdata, rc):
     """Callback for MQTT disconnection"""
-    log(f"Disconnected from MQTT broker, result code {rc}")
+    log(f"Disconnected from MQTT broker, result code {rc}", "error")
 
 
 def on_message(client, userdata, msg):
@@ -492,10 +516,10 @@ def on_message(client, userdata, msg):
         elif topic == f"{BASE_COMMAND_TOPIC}backup":
             handle_backup()
         else:
-            log(f"Unknown command topic: {topic}")
+            log(f"Unknown command topic: {topic}", "warning")
 
     except Exception as e:
-        log(f"Error processing message: {e}")
+        log(f"Error processing message: {e}", "error")
 
 
 # === MAIN EXECUTION ===
@@ -523,7 +547,7 @@ def main():
         client.publish(AVAILABILITY_TOPIC, "connection lost", retain=True)
         client.disconnect()
     except Exception as e:
-        log(f"Fatal error: {e}")
+        log(f"Fatal error: {e}", "error")
         exit(1)
 
 
