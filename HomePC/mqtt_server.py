@@ -34,19 +34,6 @@ logging.basicConfig(
     handlers=[rotating_handler, console_handler]
 )
 
-def log(msg, level="info"):
-    """Unified logger wrapper"""
-    if level == "info":
-        logging.info(msg)
-    elif level == "error":
-        logging.error(msg)
-    elif level == "warning":
-        logging.warning(msg)
-    elif level == "debug":
-        logging.debug(msg)
-    else:
-        logging.info(msg)
-
 # MQTT settings
 MQTT_BROKER = "192.168.0.241"
 MQTT_PORT = 1783
@@ -81,6 +68,19 @@ def remove_spaces(text):
     """Remove spaces and convert to lowercase for entity IDs"""
     return text.replace(" ", "_").lower()
 
+def log(msg, level="info"):
+    """Unified logger wrapper"""
+    if level == "info":
+        logging.info(msg)
+    elif level == "error":
+        logging.error(msg)
+    elif level == "warning":
+        logging.warning(msg)
+    elif level == "debug":
+        logging.debug(msg)
+    else:
+        logging.info(msg)
+     
 # === HOME ASSISTANT MQTT DISCOVERY FUNCTIONS ===
 def publish_mqtt_sensor_discovery(name, state_topic, icon="", unit_of_measurement="",
                                   device_class="", state_class="", entity_category="",
