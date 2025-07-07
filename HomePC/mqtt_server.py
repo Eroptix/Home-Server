@@ -500,7 +500,9 @@ def backup_thread():
         os.chmod(BACKUP_SCRIPT_LOCAL, 0o755)  # Make executable
 
         publish_backup_status("RUNNING")
-        log("Running backup script")
+        log(f"Running backup script at: {BACKUP_SCRIPT_LOCAL}")
+        log(f"Current working directory: {os.getcwd()}")
+        log(f"Script exists: {os.path.exists(BACKUP_SCRIPT_LOCAL)}")
 
         proc = subprocess.run([BACKUP_SCRIPT_LOCAL], capture_output=True, text=True)
 
