@@ -44,7 +44,7 @@ MQTT_PORT = 1783
 
 # Device information
 DEVICE_NAME = "homeserver"
-CURRENT_SW_VERSION = "1.0.4"
+CURRENT_SW_VERSION = "1.0.5"
 DEVICE_MODEL = "Home PC Server"
 DEVICE_MANUFACTURER = "BTM Engineering"
 
@@ -84,7 +84,7 @@ MARYTTS_URL = "http://192.168.0.241:59125/process"
 DEFAULT_VOICE = "cmu-slt-hsmm"
 
 # Bluetooth device addresses
-BT_SOUNDBAR_MAC = "XX:XX:XX:XX:XX:XX"
+BT_SOUNDBAR_MAC = "68:52:10:57:03:58"
 
 
 # === UTILITY FUNCTIONS ===
