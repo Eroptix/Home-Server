@@ -44,7 +44,7 @@ MQTT_PORT = 1783
 
 # Device information
 DEVICE_NAME = "homeserver"
-CURRENT_SW_VERSION = "1.0.8"
+CURRENT_SW_VERSION = "1.0.9"
 DEVICE_MODEL = "Home PC Server"
 DEVICE_MANUFACTURER = "BTM Engineering"
 
@@ -568,12 +568,17 @@ def generate_tts(text):
 
 
 def play_audio(file_path, cleanup=True):
-    """Play audio file using ffplay and optionally delete it afterwards"""
+    """Play audio file and optionally clean up"""
     try:
-        result = subprocess.run(
-            ["ffplay", "-nodisp", "-autoexit", "-loglevel", "quiet", file_path],
-            check=True
-        )
+        # Set up environment variables for audio playback
+        env = os.environ.copy()
+        env["XDG_RUNTIME_DIR"] = "/run/user/1000"  # Adjust this if your UID is different
+        env["DISPLAY"] = ":0"  # Often needed if PulseAudio or GUI context is used
+
+        subprocess.run([
+            "ffplay", "-nodisp", "-autoexit", "-loglevel", "quiet", file_path
+        ], env=env, check=True)
+
         log(f"Audio played: {file_path}")
     except subprocess.CalledProcessError as e:
         log(f"Audio playback failed: {e}", "error")
@@ -581,9 +586,8 @@ def play_audio(file_path, cleanup=True):
         if cleanup:
             try:
                 os.remove(file_path)
-                log(f"Deleted audio file: {file_path}")
-            except OSError as e:
-                log(f"Failed to delete audio file: {e}", "error")
+            except OSError:
+                pass
 
 
 def handle_tts(payload):
