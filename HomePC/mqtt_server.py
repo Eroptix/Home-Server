@@ -44,7 +44,7 @@ MQTT_PORT = 1783
 
 # Device information
 DEVICE_NAME = "homeserver"
-CURRENT_SW_VERSION = "1.0.6"
+CURRENT_SW_VERSION = "1.0.7"
 DEVICE_MODEL = "Home PC Server"
 DEVICE_MANUFACTURER = "BTM Engineering"
 
@@ -596,10 +596,15 @@ def handle_tts(payload):
 
 # === BLUETOOTH ===
 def btctl(command):
-    """Execute bluetoothctl command"""
-    full_command = f'echo -e "{command}" | bluetoothctl'
+    """Execute bluetoothctl command safely using input"""
     try:
-        result = subprocess.run(full_command, shell=True, capture_output=True, text=True, timeout=10)
+        result = subprocess.run(
+            ["bluetoothctl"],
+            input=command + "\n",
+            capture_output=True,
+            text=True,
+            timeout=10
+        )
         return result
     except subprocess.TimeoutExpired:
         log("Bluetooth command timed out", "error")
@@ -611,7 +616,9 @@ def handle_bluetooth_connect():
     log("Connecting to Bluetooth soundbar")
     result = btctl(f"connect {BT_SOUNDBAR_MAC}")
     if result:
-        log(f"Bluetooth connect result: {result.stdout}", "error")
+        log(f"Bluetooth connect result:\n{result.stdout.strip()}", "info")
+        if result.stderr:
+            log(f"Bluetooth error:\n{result.stderr.strip()}", "error")
 
 
 def handle_bluetooth_disconnect():
@@ -619,7 +626,9 @@ def handle_bluetooth_disconnect():
     log("Disconnecting from Bluetooth soundbar")
     result = btctl(f"disconnect {BT_SOUNDBAR_MAC}")
     if result:
-        log(f"Bluetooth disconnect result: {result.stdout}", "error")
+        log(f"Bluetooth disconnect result:\n{result.stdout.strip()}", "info")
+        if result.stderr:
+            log(f"Bluetooth error:\n{result.stderr.strip()}", "error")
 
 
 # === MQTT FUNCTIONS ===
