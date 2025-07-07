@@ -44,7 +44,7 @@ MQTT_PORT = 1783
 
 # Device information
 DEVICE_NAME = "homeserver"
-CURRENT_SW_VERSION = "1.0.2"
+CURRENT_SW_VERSION = "1.0.3"
 DEVICE_MODEL = "Home PC Server"
 DEVICE_MANUFACTURER = "BTM Engineering"
 
@@ -504,7 +504,7 @@ def backup_thread():
         log(f"Current working directory: {os.getcwd()}")
         log(f"Script exists: {os.path.exists(BACKUP_SCRIPT_LOCAL)}")
 
-        proc = subprocess.run([BACKUP_SCRIPT_LOCAL], capture_output=True, text=True)
+        proc = subprocess.run(["bash", BACKUP_SCRIPT_LOCAL], capture_output=True, text=True)
 
         if proc.returncode == 0:
             publish_backup_status("COMPLETED")
