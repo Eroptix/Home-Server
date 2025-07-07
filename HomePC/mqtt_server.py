@@ -648,6 +648,7 @@ def on_connect(client, userdata, flags, rc):
         log("Connected to MQTT broker")
         client.subscribe(AUDIO_TOPIC)
         client.subscribe(UPDATE_TOPIC)
+        client.subscribe(TTS_TOPIC)
         client.subscribe(BLUETOOTH_CONNECT_TOPIC)
         client.subscribe(BLUETOOTH_DISCONNECT_TOPIC)
         client.subscribe(BACKUP_RUN_TOPIC)
