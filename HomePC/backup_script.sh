@@ -5,7 +5,7 @@ BACKUP_DIR="/mnt/ssd/backups"
 DEST_REMOTE="gdrive:my_backups"
 TIMESTAMP=$(date +"%Y-%m-%d")
 DAYS_TO_KEEP=7
-SW_VERSION="1.0.0"
+SW_VERSION="1.1.0"
 
 # Log setup
 LOG_DIR="${BACKUP_DIR}/logs"
