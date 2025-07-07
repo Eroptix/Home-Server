@@ -44,7 +44,7 @@ MQTT_PORT = 1783
 
 # Device information
 DEVICE_NAME = "homeserver"
-CURRENT_SW_VERSION = "1.0.0"
+CURRENT_SW_VERSION = "1.0.1"
 DEVICE_MODEL = "Home PC Server"
 DEVICE_MANUFACTURER = "BTM Engineering"
 
@@ -56,6 +56,7 @@ AVAILABILITY_TOPIC =                        f"home/{DEVICE_NAME}/available"
 BLUETOOTH_CONNECT_TOPIC =                   f"home/{DEVICE_NAME}/bluetooth/connect"
 BLUETOOTH_DISCONNECT_TOPIC =                f"home/{DEVICE_NAME}/bluetooth/disconnect"
 UPDATE_TOPIC =                              f"home/{DEVICE_NAME}/update"
+TTS_TOPIC =                                 f"home/{DEVICE_NAME}/tts"
 LOG_ERROR_TOPIC =                           f"home/{DEVICE_NAME}/log/error"
 LOG_WARNING_TOPIC =                         f"home/{DEVICE_NAME}/log/warning"
 LOG_INFO_TOPIC =                            f"home/{DEVICE_NAME}/log/info"
@@ -73,9 +74,10 @@ STATUS_MEMORY_TOTAL_TOPIC =                 f"home/{DEVICE_NAME}/status/memory/t
 STATUS_MEMORY_USED_TOPIC =                  f"home/{DEVICE_NAME}/status/memory/used"
 STATUS_MEMORY_PERCENTAGE_TOPIC =            f"home/{DEVICE_NAME}/status/memory/percentage"
 
-# Backup script 
-BACKUP_SCRIPT_URL = "https://raw.githubusercontent.com/YourUsername/YourRepo/main/tools/backup.sh"
-BACKUP_SCRIPT_LOCAL = "./backup.sh"
+# Backup script
+BACKUP_SCRIPT_URL = "https://raw.githubusercontent.com/Eroptix/Home-Server/refs/heads/main/HomePC/backup_script.sh"
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+BACKUP_SCRIPT_LOCAL = os.path.join(BASE_DIR, "backup.sh")
 
 # TTS settings
 MARYTTS_URL = "http://192.168.0.241:59125/process"
@@ -206,7 +208,7 @@ def collect_system_status():
     status["os"] = platform.platform()
     status["hostname"] = socket.gethostname()
 
-    return status    
+    return status
 
 # === HOME ASSISTANT MQTT DISCOVERY FUNCTIONS ===
 def publish_mqtt_sensor_discovery(name, state_topic, icon="", unit_of_measurement="",
@@ -593,7 +595,7 @@ def btctl(command):
 def handle_bluetooth_connect():
     """Connect to Bluetooth device"""
     log("Connecting to Bluetooth soundbar")
-    result = btctl(f"connect {BT_DEVICE_MAC}")
+    result = btctl(f"connect {BT_SOUNDBAR_MAC}")
     if result:
         log(f"Bluetooth connect result: {result.stdout}", "error")
 
@@ -601,7 +603,7 @@ def handle_bluetooth_connect():
 def handle_bluetooth_disconnect():
     """Disconnect from Bluetooth device"""
     log("Disconnecting from Bluetooth soundbar")
-    result = btctl(f"disconnect {BT_DEVICE_MAC}")
+    result = btctl(f"disconnect {BT_SOUNDBAR_MAC}")
     if result:
         log(f"Bluetooth disconnect result: {result.stdout}", "error")
 
@@ -611,7 +613,11 @@ def on_connect(client, userdata, flags, rc):
     """Callback for MQTT connection"""
     if rc == 0:
         log("Connected to MQTT broker")
-        client.subscribe(f"{BASE_COMMAND_TOPIC}#")
+        client.subscribe(TTS_TOPIC)
+        client.subscribe(UPDATE_TOPIC)
+        client.subscribe(BLUETOOTH_CONNECT_TOPIC)
+        client.subscribe(BLUETOOTH_DISCONNECT_TOPIC)
+        client.subscribe(BACKUP_RUN_TOPIC)
 
         # Publish availability
         client.publish(AVAILABILITY_TOPIC, "connected", retain=True)
@@ -636,7 +642,7 @@ def on_message(client, userdata, msg):
         payload = msg.payload.decode().strip()
         log(f"Message received on {topic}: {payload}")
 
-        if topic == f"{BASE_COMMAND_TOPIC}tts":
+        if topic == TTS_TOPIC:
             handle_tts(payload)
         elif topic == BLUETOOTH_CONNECT_TOPIC:
             handle_bluetooth_connect()
@@ -645,8 +651,6 @@ def on_message(client, userdata, msg):
         elif topic == UPDATE_TOPIC:
             handle_self_update()
         elif topic == BACKUP_RUN_TOPIC:
-            handle_backup()
-        elif topic == f"{BASE_COMMAND_TOPIC}audio/play":
             handle_backup()
         else:
             log(f"Unknown command topic: {topic}", "warning")
