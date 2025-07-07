@@ -44,7 +44,7 @@ MQTT_PORT = 1783
 
 # Device information
 DEVICE_NAME = "homeserver"
-CURRENT_SW_VERSION = "1.0.3"
+CURRENT_SW_VERSION = "1.0.4"
 DEVICE_MODEL = "Home PC Server"
 DEVICE_MANUFACTURER = "BTM Engineering"
 
@@ -497,6 +497,16 @@ def backup_thread():
 
         with open(BACKUP_SCRIPT_LOCAL, "wb") as f:
             f.write(r.content)
+
+        # Fix line endings automatically to Unix style
+        with open(BACKUP_SCRIPT_LOCAL, "r", encoding="utf-8") as f:
+            content = f.read()
+
+        content = content.replace('\r\n', '\n')
+
+        with open(BACKUP_SCRIPT_LOCAL, "w", encoding="utf-8") as f:
+            f.write(content)
+
         os.chmod(BACKUP_SCRIPT_LOCAL, 0o755)  # Make executable
 
         publish_backup_status("RUNNING")
