@@ -284,7 +284,6 @@ def publish_mqtt_climate_discovery(name, current_temp_topic, temp_state_topic,
     log(f"Published climate discovery: {name}")
 
 
-# === SETUP HOME ASSISTANT ENTITIES ===
 def setup_home_assistant_entities():
     """Setup all Home Assistant entities via MQTT discovery"""
     log("Setting up Home Assistant entities")

@@ -1,10 +1,19 @@
 #!/bin/bash
 
-# Configuration
+# === Configuration ===
 BACKUP_DIR="/mnt/ssd/backups"
 DEST_REMOTE="gdrive:my_backups"
 TIMESTAMP=$(date +"%Y-%m-%d")
 DAYS_TO_KEEP=7
+
+# Log setup
+LOG_DIR="/mnt/ssd/backups/logs"
+LOG_FILE="${LOG_DIR}/backup_${TIMESTAMP}.log"
+mkdir -p "$LOG_DIR"
+
+log() {
+  echo "$(date '+%Y-%m-%d %H:%M:%S') - $*" | tee -a "$LOG_FILE"
+}
 
 # Folders to back up
 FOLDERS=(
@@ -13,26 +22,23 @@ FOLDERS=(
   piwol stash whisparr
 )
 
-# ========= Backup system configuration =========
-echo "Backing up system configuration..."
+log "========== Starting backup at $TIMESTAMP =========="
 
+# === Backup system configuration ===
+log "Backing up system configuration"
 SYS_BACKUP_DIR="${BACKUP_DIR}/system_config_${TIMESTAMP}"
 mkdir -p "$SYS_BACKUP_DIR"
 
-# 1. Backup crontab
-echo "Saving crontab..."
+log "Saving crontab"
 crontab -l > "${SYS_BACKUP_DIR}/crontab.txt" 2>/dev/null
 
-# 2. Backup installed packages
-echo "Saving package list..."
+log "Saving installed package list"
 dpkg --get-selections > "${SYS_BACKUP_DIR}/installed_packages.txt"
 
-# 3. Backup systemd services
-echo "Backing up custom systemd services..."
+log "Backing up systemd services"
 cp -r /etc/systemd/system "${SYS_BACKUP_DIR}/systemd_services"
 
-# 4. Backup key system config files
-echo "Backing up key config files..."
+log "Backing up key config files"
 cp /etc/fstab "${SYS_BACKUP_DIR}/fstab.txt" 2>/dev/null
 cp /etc/hostname "${SYS_BACKUP_DIR}/hostname.txt" 2>/dev/null
 cp /etc/hosts "${SYS_BACKUP_DIR}/hosts.txt" 2>/dev/null
@@ -42,29 +48,29 @@ cp /etc/network/interfaces "${SYS_BACKUP_DIR}/interfaces.txt" 2>/dev/null || tru
 SYS_CONFIG_ZIP="backup_system_config_${TIMESTAMP}.zip"
 zip -r "${BACKUP_DIR}/${SYS_CONFIG_ZIP}" "$SYS_BACKUP_DIR" >/dev/null
 rm -rf "$SYS_BACKUP_DIR"
+log "System configuration backed up to ${SYS_CONFIG_ZIP}"
 
-echo "System configuration backed up to ${SYS_CONFIG_ZIP}"
-
-# Create zip backups
-echo "Compressing folders..."
+# === Compress folders ===
+log "Compressing folders"
 for folder in "${FOLDERS[@]}"; do
   ZIP_NAME="backup_${folder}_${TIMESTAMP}.zip"
   sudo zip -r "${BACKUP_DIR}/${ZIP_NAME}" "/home/pi/${folder}" >/dev/null
-  echo "      $folder backed up to $ZIP_NAME"
+  log "    $folder backed up to $ZIP_NAME"
 done
 
-# Upload to Google Drive
-echo "Uploading backups to Google Drive..."
+# === Upload to Google Drive ===
+log "Uploading backups to Google Drive"
 rclone copy "$BACKUP_DIR" "$DEST_REMOTE" --include "*${TIMESTAMP}.zip" --progress
 
-# Delete remote files older than X days
-echo "Cleaning up old remote backups (older than $DAYS_TO_KEEP days)..."
+# === Cleanup old backups ===
+log "Deleting old remote backups (older than ${DAYS_TO_KEEP} days)"
 rclone delete --min-age ${DAYS_TO_KEEP}d "$DEST_REMOTE" --drive-use-trash=false
 
-# Delete local files older than X days
-echo "Cleaning up old local backups (older than $DAYS_TO_KEEP days)..."
+log "Deleting old local backups (older than ${DAYS_TO_KEEP} days)"
 find "$BACKUP_DIR" -name "*.zip" -type f -mtime +${DAYS_TO_KEEP} -delete
 
-# Show used and free space on Google Drive
-echo "Google Drive Usage:"
-rclone about gdrive:
+# === Final Google Drive space info ===
+log "Checking Google Drive usage:"
+rclone about gdrive: | tee -a "$LOG_FILE"
+
+log "========== Backup finished =========="
