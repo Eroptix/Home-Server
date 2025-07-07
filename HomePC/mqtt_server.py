@@ -78,7 +78,7 @@ BACKUP_SCRIPT_URL = "https://raw.githubusercontent.com/YourUsername/YourRepo/mai
 BACKUP_SCRIPT_LOCAL = "./backup.sh"
 
 # TTS settings
-MARYTTS_URL = "http://localhost:59125/process"
+MARYTTS_URL = "http://192.168.0.241:59125/process"
 DEFAULT_VOICE = "cmu-slt-hsmm"
 
 # Bluetooth device addresses
