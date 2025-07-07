@@ -528,6 +528,8 @@ def on_message(client, userdata, msg):
             handle_self_update()
         elif topic == f"{BASE_COMMAND_TOPIC}backup":
             handle_backup()
+        elif topic == f"{BASE_COMMAND_TOPIC}audio/play":
+            handle_backup()
         else:
             log(f"Unknown command topic: {topic}", "warning")
 
