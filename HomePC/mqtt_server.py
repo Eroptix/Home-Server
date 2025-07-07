@@ -7,6 +7,10 @@ import threading
 import json
 import logging
 from logging.handlers import RotatingFileHandler
+import psutil
+import platform
+import socket
+import shutil
 
 # === Logging Setup with Rotation ===
 LOG_DIR = "./logs"
@@ -44,12 +48,17 @@ CURRENT_SW_VERSION = "1.0.0"
 DEVICE_MODEL = "Home PC Server"
 DEVICE_MANUFACTURER = "BTM Engineering"
 
-# Dynamic topic construction
-BASE_COMMAND_TOPIC = f"home/{DEVICE_NAME}/command/"
-BASE_RESPONSE_TOPIC = f"home/{DEVICE_NAME}/response/"
-PARAMETER_REQUEST_TOPIC = f"home/{DEVICE_NAME}/parameters/request"
-AVAILABILITY_TOPIC = f"home/{DEVICE_NAME}/available"
-PARAMETER_RESPONSE_TOPIC = f"home/{DEVICE_NAME}/parameters"
+# MQTT topics
+BACKUP_RUN_TOPIC =                          f"home/{DEVICE_NAME}/backup/run"
+BACKUP_STATUS_TOPIC =                       f"home/{DEVICE_NAME}/backup/status"
+BACKUP_LOG_TOPIC =                          f"home/{DEVICE_NAME}/backup/log"
+AVAILABILITY_TOPIC =                        f"home/{DEVICE_NAME}/available"
+BLUETOOTH_CONNECT_TOPIC =                   f"home/{DEVICE_NAME}/bluetooth/connect"
+BLUETOOTH_DISCONNECT_TOPIC =                f"home/{DEVICE_NAME}/bluetooth/disconnect"
+UPDATE_TOPIC =                              f"home/{DEVICE_NAME}/update"
+LOG_ERROR_TOPIC =                           f"home/{DEVICE_NAME}/log/error"
+LOG_WARNING_TOPIC =                         f"home/{DEVICE_NAME}/log/warning"
+LOG_INFO_TOPIC =                            f"home/{DEVICE_NAME}/log/info"
 
 # Backup script 
 BACKUP_SCRIPT_URL = "https://raw.githubusercontent.com/YourUsername/YourRepo/main/tools/backup.sh"
@@ -68,19 +77,124 @@ def remove_spaces(text):
     """Remove spaces and convert to lowercase for entity IDs"""
     return text.replace(" ", "_").lower()
 
+
 def log(msg, level="info"):
     """Unified logger wrapper"""
     if level == "info":
         logging.info(msg)
+        client.publish(LOG_INFO_TOPIC, msg, retain=False)
     elif level == "error":
         logging.error(msg)
+        client.publish(LOG_ERROR_TOPIC, msg, retain=False)
     elif level == "warning":
         logging.warning(msg)
+        client.publish(LOG_WARNING_TOPIC, msg, retain=False)
     elif level == "debug":
         logging.debug(msg)
     else:
         logging.info(msg)
-     
+
+
+def get_uptime():
+    """Return system uptime as a string"""
+    try:
+        with open('/proc/uptime', 'r') as f:
+            uptime_seconds = float(f.readline().split()[0])
+            return str(timedelta(seconds=int(uptime_seconds)))
+    except:
+        return "unknown"
+
+
+def get_ip_address():
+    """Return the current IP address"""
+    try:
+        hostname = socket.gethostname()
+        return socket.gethostbyname(hostname)
+    except:
+        return "unknown"
+
+
+def get_cpu_temperature():
+    """Try to read CPU temperature (Linux only)"""
+    try:
+        temp_paths = [
+            "/sys/class/thermal/thermal_zone0/temp",
+            "/sys/class/hwmon/hwmon0/temp1_input"
+        ]
+        for path in temp_paths:
+            if os.path.exists(path):
+                with open(path, "r") as f:
+                    temp_raw = int(f.read().strip())
+                    return round(temp_raw / 1000, 1)
+    except:
+        pass
+    return None
+
+
+def get_mounted_drives_info(exclude_roots=True):
+    """Collect info about all mounted drives, excluding system volumes if needed"""
+    external_drives = {}
+    for part in psutil.disk_partitions(all=False):
+        mountpoint = part.mountpoint
+        fstype = part.fstype
+
+        # Skip non-storage mounts
+        if exclude_roots and (mountpoint.startswith("/boot") or mountpoint in ["/", "/snap", "/dev", "/proc", "/sys", "/run"]):
+            continue
+        if 'tmpfs' in part.opts or 'loop' in part.device:
+            continue
+
+        try:
+            usage = psutil.disk_usage(mountpoint)
+            external_drives[mountpoint] = {
+                "total_gb": round(usage.total / (1024**3), 1),
+                "used_gb": round(usage.used / (1024**3), 1),
+                "free_gb": round(usage.free / (1024**3), 1),
+                "percent_used": usage.percent
+            }
+        except Exception as e:
+            external_drives[mountpoint] = {
+                "error": str(e)
+            }
+    return external_drives
+
+
+def collect_system_status():
+    """Return a dictionary with various system status parameters"""
+    status = {}
+
+    # CPU
+    load1, load5, load15 = os.getloadavg()
+    status["cpu_load_1min"] = round(load1, 2)
+    status["cpu_load_5min"] = round(load5, 2)
+    status["cpu_load_15min"] = round(load15, 2)
+    temp = get_cpu_temperature()
+    status["cpu_temp"] = temp if temp is not None else "unavailable"
+
+    # Memory
+    mem = psutil.virtual_memory()
+    status["memory_total_mb"] = round(mem.total / 1024 / 1024, 1)
+    status["memory_used_mb"] = round(mem.used / 1024 / 1024, 1)
+    status["memory_percent"] = mem.percent
+
+    # Disk
+    disk = shutil.disk_usage("/")
+    status["disk_total_gb"] = round(disk.total / 1024 / 1024 / 1024, 1)
+    status["disk_used_gb"] = round(disk.used / 1024 / 1024 / 1024, 1)
+    status["disk_free_gb"] = round(disk.free / 1024 / 1024 / 1024, 1)
+    status["disk_percent"] = round(disk.used / disk.total * 100, 1)
+
+    # External Drives
+    status["external_drives"] = get_mounted_drives_info()
+
+    # Network / System Info
+    status["ip_address"] = get_ip_address()
+    status["uptime"] = get_uptime()
+    status["os"] = platform.platform()
+    status["hostname"] = socket.gethostname()
+
+    return status    
+
 # === HOME ASSISTANT MQTT DISCOVERY FUNCTIONS ===
 def publish_mqtt_sensor_discovery(name, state_topic, icon="", unit_of_measurement="",
                                   device_class="", state_class="", entity_category="",
@@ -324,24 +438,17 @@ def setup_home_assistant_entities():
     log("Setting up Home Assistant entities")
 
     # Buttons
-    publish_mqtt_button_discovery("Update Script", f"{BASE_COMMAND_TOPIC}update",
-                                  icon="mdi:update", optimistic=True)
-    publish_mqtt_button_discovery("Run Backup", f"{BASE_COMMAND_TOPIC}backup",
-                                  icon="mdi:backup-restore", optimistic=True)
-    publish_mqtt_button_discovery("Connect Bluetooth", f"{BASE_COMMAND_TOPIC}bluetooth/connect",
-                                  icon="mdi:bluetooth-connect", optimistic=True)
-    publish_mqtt_button_discovery("Disconnect Bluetooth", f"{BASE_COMMAND_TOPIC}bluetooth/disconnect",
-                                  icon="mdi:bluetooth-off", optimistic=True)
+    publish_mqtt_button_discovery("Update Script", UPDATE_TOPIC, icon="mdi:update", optimistic=True)
+    publish_mqtt_button_discovery("Run Backup", BACKUP_RUN_TOPIC, icon="mdi:backup-restore", optimistic=True)
+    publish_mqtt_button_discovery("Connect Bluetooth", BLUETOOTH_CONNECT_TOPIC, icon="mdi:bluetooth-connect", optimistic=True)
+    publish_mqtt_button_discovery("Disconnect Bluetooth", BLUETOOTH_DISCONNECT_TOPIC, icon="mdi:bluetooth-off", optimistic=True)
 
     # Sensors
-    publish_mqtt_sensor_discovery("Backup Status", f"{BASE_RESPONSE_TOPIC}backup/status",
-                                  icon="mdi:backup-restore", entity_category="diagnostic")
-    publish_mqtt_sensor_discovery("Backup Log", f"{BASE_RESPONSE_TOPIC}backup/log",
-                                  icon="mdi:text-box-outline", entity_category="diagnostic")
+    publish_mqtt_sensor_discovery("Backup Status", BACKUP_STATUS_TOPIC, icon="mdi:backup-restore", entity_category="diagnostic")
+    publish_mqtt_sensor_discovery("Backup Log", BACKUP_LOG_TOPIC, icon="mdi:text-box-outline", entity_category="diagnostic")
 
     # Binary Sensors
-    publish_mqtt_binary_sensor_discovery("MQTT Server Status", AVAILABILITY_TOPIC,
-                                         icon="mdi:server", device_class="connectivity")
+    publish_mqtt_binary_sensor_discovery("MQTT Server Status", AVAILABILITY_TOPIC, icon="mdi:server", device_class="connectivity")
 
     log("Home Assistant entities setup complete")
 
