@@ -44,7 +44,7 @@ MQTT_PORT = 1783
 
 # Device information
 DEVICE_NAME = "homeserver"
-CURRENT_SW_VERSION = "1.0.7"
+CURRENT_SW_VERSION = "1.0.8"
 DEVICE_MODEL = "Home PC Server"
 DEVICE_MANUFACTURER = "BTM Engineering"
 
@@ -57,6 +57,7 @@ BLUETOOTH_CONNECT_TOPIC =                   f"home/{DEVICE_NAME}/bluetooth/conne
 BLUETOOTH_DISCONNECT_TOPIC =                f"home/{DEVICE_NAME}/bluetooth/disconnect"
 UPDATE_TOPIC =                              f"home/{DEVICE_NAME}/update"
 TTS_TOPIC =                                 f"home/{DEVICE_NAME}/tts"
+AUDIO_TOPIC =                               f"home/{DEVICE_NAME}/audio"
 LOG_ERROR_TOPIC =                           f"home/{DEVICE_NAME}/log/error"
 LOG_WARNING_TOPIC =                         f"home/{DEVICE_NAME}/log/warning"
 LOG_INFO_TOPIC =                            f"home/{DEVICE_NAME}/log/info"
@@ -566,18 +567,23 @@ def generate_tts(text):
     return None
 
 
-def play_audio(file_path):
-    """Play audio file and clean up"""
+def play_audio(file_path, cleanup=True):
+    """Play audio file using ffplay and optionally delete it afterwards"""
     try:
-        subprocess.run(["aplay", file_path], check=True)
+        result = subprocess.run(
+            ["ffplay", "-nodisp", "-autoexit", "-loglevel", "quiet", file_path],
+            check=True
+        )
         log(f"Audio played: {file_path}")
     except subprocess.CalledProcessError as e:
-        log(f"Audio playback failed: {e}","error")
+        log(f"Audio playback failed: {e}", "error")
     finally:
-        try:
-            os.remove(file_path)
-        except OSError:
-            pass
+        if cleanup:
+            try:
+                os.remove(file_path)
+                log(f"Deleted audio file: {file_path}")
+            except OSError as e:
+                log(f"Failed to delete audio file: {e}", "error")
 
 
 def handle_tts(payload):
@@ -636,7 +642,7 @@ def on_connect(client, userdata, flags, rc):
     """Callback for MQTT connection"""
     if rc == 0:
         log("Connected to MQTT broker")
-        client.subscribe(TTS_TOPIC)
+        client.subscribe(AUDIO_TOPIC)
         client.subscribe(UPDATE_TOPIC)
         client.subscribe(BLUETOOTH_CONNECT_TOPIC)
         client.subscribe(BLUETOOTH_DISCONNECT_TOPIC)
@@ -675,6 +681,8 @@ def on_message(client, userdata, msg):
             handle_self_update()
         elif topic == BACKUP_RUN_TOPIC:
             handle_backup()
+        elif topic == AUDIO_TOPIC:
+            play_audio(payload, False)
         else:
             log(f"Unknown command topic: {topic}", "warning")
 
