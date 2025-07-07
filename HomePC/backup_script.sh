@@ -46,13 +46,13 @@ cp /etc/hostname "${SYS_BACKUP_DIR}/hostname.txt" 2>/dev/null
 cp /etc/hosts "${SYS_BACKUP_DIR}/hosts.txt" 2>/dev/null
 cp /etc/network/interfaces "${SYS_BACKUP_DIR}/interfaces.txt" 2>/dev/null || true
 
-# === New: Backup Docker container info ===
+# === Backup Docker container info ===
 log "Saving Docker container information"
 docker ps -a > "${SYS_BACKUP_DIR}/docker_containers.txt"
 docker images > "${SYS_BACKUP_DIR}/docker_images.txt"
 docker volume ls > "${SYS_BACKUP_DIR}/docker_volumes.txt"
 
-# === New: Network snapshot ===
+# === Network snapshot ===
 log "Saving network configuration"
 ip a > "${SYS_BACKUP_DIR}/network_interfaces.txt"
 ip route > "${SYS_BACKUP_DIR}/routes.txt"
@@ -86,7 +86,7 @@ find "$BACKUP_DIR" -name "*.zip" -type f -mtime +${DAYS_TO_KEEP} -delete
 log "Checking Google Drive usage:"
 rclone about gdrive: | tee -a "$LOG_FILE"
 
-# === New: Backup manifest summary ===
+# === Backup manifest summary ===
 MANIFEST_FILE="${BACKUP_DIR}/manifest_${TIMESTAMP}.txt"
 log "Generating backup manifest: $MANIFEST_FILE"
 {
