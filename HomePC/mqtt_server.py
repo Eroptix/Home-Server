@@ -44,7 +44,7 @@ MQTT_PORT = 1783
 
 # Device information
 DEVICE_NAME = "homeserver"
-CURRENT_SW_VERSION = "1.0.5"
+CURRENT_SW_VERSION = "1.0.6"
 DEVICE_MODEL = "Home PC Server"
 DEVICE_MANUFACTURER = "BTM Engineering"
 
@@ -61,6 +61,7 @@ LOG_ERROR_TOPIC =                           f"home/{DEVICE_NAME}/log/error"
 LOG_WARNING_TOPIC =                         f"home/{DEVICE_NAME}/log/warning"
 LOG_INFO_TOPIC =                            f"home/{DEVICE_NAME}/log/info"
 STATUS_UPTIME_TOPIC =                       f"home/{DEVICE_NAME}/status/uptime"
+STATUS_VERSION_TOPIC =                      f"home/{DEVICE_NAME}/status/version"
 STATUS_IP_TOPIC =                           f"home/{DEVICE_NAME}/status/ip"
 STATUS_CPU_TEMP_TOPIC =                     f"home/{DEVICE_NAME}/status/cpu/temperature"
 STATUS_LOAD_1MIN_TOPIC =                    f"home/{DEVICE_NAME}/status/cpu/load/1min"
@@ -461,6 +462,7 @@ def setup_home_assistant_entities():
     # Sensors
     publish_mqtt_sensor_discovery("Backup Status", BACKUP_STATUS_TOPIC, icon="mdi:backup-restore", entity_category="diagnostic")
     publish_mqtt_sensor_discovery("Backup Log", BACKUP_LOG_TOPIC, icon="mdi:text-box-outline", entity_category="diagnostic")
+    publish_mqtt_sensor_discovery("Software Version", STATUS_VERSION_TOPIC, icon="mdi:text-box-outline", entity_category="diagnostic")
 
     # Binary Sensors
     publish_mqtt_binary_sensor_discovery("MQTT Server Status", AVAILABILITY_TOPIC, icon="mdi:server", device_class="connectivity")
@@ -690,6 +692,7 @@ def main():
 
     try:
         client.connect(MQTT_BROKER, MQTT_PORT, 60)
+        client.publish(STATUS_VERSION_TOPIC, CURRENT_SW_VERSION, retain=True)
         client.loop_forever()
     except KeyboardInterrupt:
         log("Shutting down")
