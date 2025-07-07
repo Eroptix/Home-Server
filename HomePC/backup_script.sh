@@ -2,6 +2,7 @@
 
 # === Configuration ===
 BACKUP_DIR="/mnt/ssd/backups"
+LOG_DIR="/mnt/ssd/backups"
 DEST_REMOTE="gdrive:my_backups"
 TIMESTAMP=$(date +"%Y-%m-%d")
 DAYS_TO_KEEP=7
