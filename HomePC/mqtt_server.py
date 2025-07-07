@@ -558,6 +558,7 @@ def generate_tts(text):
             tmpfile = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
             tmpfile.write(response.content)
             tmpfile.close()
+            log(f"TTS file created at {tmpfile.name}, size: {os.path.getsize(tmpfile.name)} bytes")
             return tmpfile.name
         else:
             log(f"MaryTTS error: {response.status_code}","error")
