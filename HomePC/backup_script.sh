@@ -6,7 +6,11 @@ LOG_DIR="/mnt/ssd/backups"
 DEST_REMOTE="gdrive:my_backups"
 TIMESTAMP=$(date +"%Y-%m-%d")
 DAYS_TO_KEEP=7
-SW_VERSION="1.1.0"
+SW_VERSION="1.1.1"
+
+# === Upload to Google Drive ===
+RCLONE_BIN="/usr/bin/rclone"
+RCLONE_LOG="/mnt/ssd/backups/rclone_upload.log"
 
 # Log setup
 LOG_DIR="${BACKUP_DIR}/logs"
@@ -72,20 +76,30 @@ for folder in "${FOLDERS[@]}"; do
   log "    $folder backed up to $ZIP_NAME"
 done
 
-# === Upload to Google Drive ===
 log "Uploading backups to Google Drive"
-rclone copy "$BACKUP_DIR" "$DEST_REMOTE" --include "*${TIMESTAMP}.zip" --progress
+$RCLONE_BIN copy "$BACKUP_DIR" "$DEST_REMOTE" \
+    --include "*${TIMESTAMP}.zip" \
+    --progress \
+    --log-level DEBUG \
+    --log-file "$RCLONE_LOG"
+
+RCLONE_UPLOAD_STATUS=$?
+if [[ $RCLONE_UPLOAD_STATUS -eq 0 ]]; then
+    log "Upload to Google Drive completed successfully."
+else
+    log "Upload to Google Drive failed with status $RCLONE_UPLOAD_STATUS. Check $RCLONE_LOG for details."
+fi
 
 # === Cleanup old backups ===
 log "Deleting old remote backups (older than ${DAYS_TO_KEEP} days)"
-rclone delete --min-age ${DAYS_TO_KEEP}d "$DEST_REMOTE" --drive-use-trash=false
+$RCLONE_BIN delete --min-age ${DAYS_TO_KEEP}d "$DEST_REMOTE" --drive-use-trash=false
 
 log "Deleting old local backups (older than ${DAYS_TO_KEEP} days)"
 find "$BACKUP_DIR" -name "*.zip" -type f -mtime +${DAYS_TO_KEEP} -delete
 
 # === Google Drive space info ===
 log "Checking Google Drive usage:"
-rclone about gdrive: | tee -a "$LOG_FILE"
+$RCLONE_BIN about gdrive: | tee -a "$LOG_FILE"
 
 # === Backup manifest summary ===
 MANIFEST_FILE="${BACKUP_DIR}/manifest_${TIMESTAMP}.txt"
