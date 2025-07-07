@@ -503,7 +503,7 @@ def backup_thread():
         proc = subprocess.run([BACKUP_SCRIPT_LOCAL], capture_output=True, text=True)
 
         if proc.returncode == 0:
-            publish_backup_status("DONE")
+            publish_backup_status("COMPLETED")
             log("Backup completed successfully")
         else:
             publish_backup_status("FAILED")

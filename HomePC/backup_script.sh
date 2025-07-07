@@ -8,7 +8,7 @@ DAYS_TO_KEEP=7
 SW_VERSION="1.0.0"
 
 # Log setup
-LOG_DIR="/mnt/ssd/backups/logs"
+LOG_DIR="${BACKUP_DIR}/logs"
 LOG_FILE="${LOG_DIR}/backup_${TIMESTAMP}.log"
 mkdir -p "$LOG_DIR"
 
@@ -46,7 +46,18 @@ cp /etc/hostname "${SYS_BACKUP_DIR}/hostname.txt" 2>/dev/null
 cp /etc/hosts "${SYS_BACKUP_DIR}/hosts.txt" 2>/dev/null
 cp /etc/network/interfaces "${SYS_BACKUP_DIR}/interfaces.txt" 2>/dev/null || true
 
-# Compress system config backup
+# === New: Backup Docker container info ===
+log "Saving Docker container information"
+docker ps -a > "${SYS_BACKUP_DIR}/docker_containers.txt"
+docker images > "${SYS_BACKUP_DIR}/docker_images.txt"
+docker volume ls > "${SYS_BACKUP_DIR}/docker_volumes.txt"
+
+# === New: Network snapshot ===
+log "Saving network configuration"
+ip a > "${SYS_BACKUP_DIR}/network_interfaces.txt"
+ip route > "${SYS_BACKUP_DIR}/routes.txt"
+
+# === Compress system config backup ===
 SYS_CONFIG_ZIP="backup_system_config_${TIMESTAMP}.zip"
 zip -r "${BACKUP_DIR}/${SYS_CONFIG_ZIP}" "$SYS_BACKUP_DIR" >/dev/null
 rm -rf "$SYS_BACKUP_DIR"
@@ -71,8 +82,24 @@ rclone delete --min-age ${DAYS_TO_KEEP}d "$DEST_REMOTE" --drive-use-trash=false
 log "Deleting old local backups (older than ${DAYS_TO_KEEP} days)"
 find "$BACKUP_DIR" -name "*.zip" -type f -mtime +${DAYS_TO_KEEP} -delete
 
-# === Final Google Drive space info ===
+# === Google Drive space info ===
 log "Checking Google Drive usage:"
 rclone about gdrive: | tee -a "$LOG_FILE"
+
+# === New: Backup manifest summary ===
+MANIFEST_FILE="${BACKUP_DIR}/manifest_${TIMESTAMP}.txt"
+log "Generating backup manifest: $MANIFEST_FILE"
+{
+  echo "========== Backup Manifest =========="
+  echo "Date: ${TIMESTAMP}"
+  echo "Software Version: ${SW_VERSION}"
+  echo ""
+  echo "Backed up folders:"
+  for folder in "${FOLDERS[@]}"; do echo "- ${folder}"; done
+  echo ""
+  echo "System config archive: ${SYS_CONFIG_ZIP}"
+  echo "Google Drive Target: ${DEST_REMOTE}"
+} > "$MANIFEST_FILE"
+log "Backup manifest written"
 
 log "========== Backup finished =========="
