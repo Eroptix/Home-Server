@@ -517,7 +517,12 @@ def backup_thread():
         log(f"Current working directory: {os.getcwd()}")
         log(f"Script exists: {os.path.exists(BACKUP_SCRIPT_LOCAL)}")
 
-        proc = subprocess.run(["sudo", BACKUP_SCRIPT_LOCAL], capture_output=True, text=True)
+        proc = subprocess.run(
+            ['sudo', '-S', BACKUP_SCRIPT_LOCAL],
+            input='bozso406\n',
+            text=True,
+            capture_output=True
+        )
 
         if proc.returncode == 0:
             publish_backup_status("COMPLETED")
