@@ -44,7 +44,7 @@ MQTT_PORT = 1783
 
 # Device information
 DEVICE_NAME = "homeserver"
-CURRENT_SW_VERSION = "1.1.0"
+CURRENT_SW_VERSION = "1.1.1"
 DEVICE_MODEL = "Home PC Server"
 DEVICE_MANUFACTURER = "BTM Engineering"
 
@@ -53,6 +53,7 @@ BACKUP_RUN_TOPIC =                          f"home/{DEVICE_NAME}/backup/run"
 BACKUP_STATUS_TOPIC =                       f"home/{DEVICE_NAME}/backup/status"
 BACKUP_LOG_TOPIC =                          f"home/{DEVICE_NAME}/backup/log"
 AVAILABILITY_TOPIC =                        f"home/{DEVICE_NAME}/available"
+BLUETOOTH_STATUS_TOPIC =                    f"home/{DEVICE_NAME}/bluetooth/status"
 BLUETOOTH_CONNECT_TOPIC =                   f"home/{DEVICE_NAME}/bluetooth/connect"
 BLUETOOTH_DISCONNECT_TOPIC =                f"home/{DEVICE_NAME}/bluetooth/disconnect"
 UPDATE_TOPIC =                              f"home/{DEVICE_NAME}/update"
@@ -466,6 +467,7 @@ def setup_home_assistant_entities():
     publish_mqtt_sensor_discovery("Error Log", LOG_ERROR_TOPIC, icon="mdi:alert-circle-outline", entity_category="diagnostic")
     publish_mqtt_sensor_discovery("Backup Status", BACKUP_STATUS_TOPIC, icon="mdi:backup-restore", entity_category="diagnostic")
     publish_mqtt_sensor_discovery("Software Version", STATUS_VERSION_TOPIC, icon="mdi:text-box-outline", entity_category="diagnostic")
+    publish_mqtt_sensor_discovery("Bluetooth Status", BLUETOOTH_STATUS_TOPIC, icon="mdi:bluetooth", entity_category="diagnostic")
 
     # Binary Sensors
     publish_mqtt_binary_sensor_discovery("MQTT Server Status", AVAILABILITY_TOPIC, icon="mdi:server", device_class="connectivity")
@@ -648,6 +650,64 @@ def handle_bluetooth_disconnect():
         if result.stderr:
             log(f"Bluetooth error:\n{result.stderr.strip()}", "error")
 
+
+def get_connected_bt_device():
+    """
+    Returns info about the connected Bluetooth device.
+    If no device is connected, returns 'not connected'.
+    If connected, returns dict with MAC and optional RSSI.
+    """
+    try:
+        # List paired devices
+        result = subprocess.run(
+            ['bluetoothctl', 'paired-devices'],
+            capture_output=True,
+            text=True,
+            timeout=5
+        )
+        devices = result.stdout.strip().splitlines()
+        if not devices:
+            return "not connected"
+
+        for line in devices:
+            parts = line.strip().split()
+            if len(parts) >= 2:
+                mac = parts[1]
+                # Check device info
+                info_result = subprocess.run(
+                    ['bluetoothctl', 'info', mac],
+                    capture_output=True,
+                    text=True,
+                    timeout=5
+                )
+                info = info_result.stdout
+                if "Connected: yes" in info:
+                    rssi = None
+                    for line in info.splitlines():
+                        if "RSSI" in line:
+                            rssi = line.split(":")[-1].strip()
+                            break
+                    return {"mac": mac, "rssi": rssi}
+    except Exception as e:
+        log(f"Bluetooth status error: {e}", "error")
+
+    return "not connected"
+
+def bt_status_monitor_loop(interval=60):
+    """Periodically check Bluetooth connection status and publish via MQTT."""
+    last_status = None
+    while True:
+        status = get_connected_bt_device()
+        if status != last_status:
+            if status == "not connected":
+                client.publish(BLUETOOTH_STATUS_TOPIC, "not connected", retain=True)
+            else:
+                mac = status["mac"]
+                rssi = status.get("rssi", "unknown")
+                payload = json.dumps({"mac": mac, "rssi": rssi})
+                client.publish(BLUETOOTH_STATUS_TOPIC, mac, retain=True)
+        last_status = status
+        time.sleep(interval)
 
 # === MQTT FUNCTIONS ===
 def on_connect(client, userdata, flags, rc):
