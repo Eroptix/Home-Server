@@ -642,7 +642,7 @@ def handle_bluetooth_connect():
             log(f"Bluetooth error:\n{result.stderr.strip()}", "error")
     
     # Wait a moment, then check status
-    time.sleep(5)
+    time.sleep(10)
     status = get_connected_bt_device()
     if status == "not connected":
         log("Bluetooth connection failed or not yet established", "warning")
@@ -661,7 +661,7 @@ def handle_bluetooth_disconnect():
             log(f"Bluetooth error:\n{result.stderr.strip()}", "error")
     
     # Wait a moment, then check status
-    time.sleep(5)
+    time.sleep(10)
     status = get_connected_bt_device()
     if status == "not connected":
         client.publish(BLUETOOTH_STATUS_TOPIC, json.dumps({"mac": None, "rssi": None}), retain=True)
