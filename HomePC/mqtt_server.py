@@ -694,7 +694,7 @@ def get_connected_bt_device():
     return "not connected"
 
 
-def bt_status_monitor_loop(interval=60):
+def bt_status_monitor_loop(interval=30):
     """Periodically check Bluetooth connection status and publish via MQTT."""
     last_status = None
     while True:
@@ -706,7 +706,7 @@ def bt_status_monitor_loop(interval=60):
                 mac = status["mac"]
                 rssi = status.get("rssi", "unknown")
                 payload = json.dumps({"mac": mac, "rssi": rssi})
-                client.publish(BLUETOOTH_STATUS_TOPIC, mac, retain=True)
+                client.publish(BLUETOOTH_STATUS_TOPIC, payload, retain=True)
         last_status = status
         time.sleep(interval)
 
@@ -786,8 +786,8 @@ def main():
         client.publish(STATUS_VERSION_TOPIC, CURRENT_SW_VERSION, retain=True)
 
         # Start background threads here
-        # threading.Thread(target=bt_status_monitor_loop, daemon=True).start()
-        
+        threading.Thread(target=bt_status_monitor_loop, daemon=True).start()
+
         client.loop_forever()
     except KeyboardInterrupt:
         log("Shutting down")
