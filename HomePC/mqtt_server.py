@@ -11,6 +11,7 @@ import psutil
 import platform
 import socket
 import shutil
+import time
 
 # === Logging Setup with Rotation ===
 LOG_DIR = "./logs"
@@ -44,7 +45,7 @@ MQTT_PORT = 1783
 
 # Device information
 DEVICE_NAME = "homeserver"
-CURRENT_SW_VERSION = "1.1.1"
+CURRENT_SW_VERSION = "1.1.2"
 DEVICE_MODEL = "Home PC Server"
 DEVICE_MANUFACTURER = "BTM Engineering"
 
@@ -639,7 +640,16 @@ def handle_bluetooth_connect():
         log(f"Bluetooth connect result:\n{result.stdout.strip()}", "info")
         if result.stderr:
             log(f"Bluetooth error:\n{result.stderr.strip()}", "error")
-
+    
+    # Wait a moment, then check status
+    time.sleep(5)
+    status = get_connected_bt_device()
+    if status == "not connected":
+        log("Bluetooth connection failed or not yet established", "warning")
+        client.publish(BLUETOOTH_STATUS_TOPIC, json.dumps({"mac": None, "rssi": None}), retain=True)
+    else:
+        client.publish(BLUETOOTH_STATUS_TOPIC, json.dumps(status), retain=True)
+        log(f"Updated Bluetooth status after connect: {status}")
 
 def handle_bluetooth_disconnect():
     """Disconnect from Bluetooth device"""
@@ -649,6 +659,16 @@ def handle_bluetooth_disconnect():
         log(f"Bluetooth disconnect result:\n{result.stdout.strip()}", "info")
         if result.stderr:
             log(f"Bluetooth error:\n{result.stderr.strip()}", "error")
+    
+    # Wait a moment, then check status
+    time.sleep(5)
+    status = get_connected_bt_device()
+    if status == "not connected":
+        client.publish(BLUETOOTH_STATUS_TOPIC, json.dumps({"mac": None, "rssi": None}), retain=True)
+        log("Updated Bluetooth status after disconnect: not connected")
+    else:
+        client.publish(BLUETOOTH_STATUS_TOPIC, json.dumps(status), retain=True)
+        log(f"Unexpected Bluetooth status after disconnect: {status}")
 
 
 def get_connected_bt_device():
