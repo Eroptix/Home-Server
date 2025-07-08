@@ -45,7 +45,7 @@ MQTT_PORT = 1783
 
 # Device information
 DEVICE_NAME = "homeserver"
-CURRENT_SW_VERSION = "1.1.2"
+CURRENT_SW_VERSION = "1.1.3"
 DEVICE_MODEL = "Home PC Server"
 DEVICE_MANUFACTURER = "BTM Engineering"
 
@@ -640,16 +640,15 @@ def handle_bluetooth_connect():
         log(f"Bluetooth connect result:\n{result.stdout.strip()}", "info")
         if result.stderr:
             log(f"Bluetooth error:\n{result.stderr.strip()}", "error")
-    
-    # Wait a moment, then check status
-    time.sleep(10)
-    status = get_connected_bt_device()
-    if status == "not connected":
-        log("Bluetooth connection failed or not yet established", "warning")
-        client.publish(BLUETOOTH_STATUS_TOPIC, json.dumps({"mac": None, "rssi": None}), retain=True)
+
+    time.sleep(5)  # Wait for connection to settle
+    status = get_bt_connection_status()
+    client.publish(BLUETOOTH_STATUS_TOPIC, status, retain=True)
+    if status == "connected":
+        log("Bluetooth device connected successfully")
     else:
-        client.publish(BLUETOOTH_STATUS_TOPIC, json.dumps(status), retain=True)
-        log(f"Updated Bluetooth status after connect: {status}")
+        log("Bluetooth connection failed or not established", "warning")
+
 
 def handle_bluetooth_disconnect():
     """Disconnect from Bluetooth device"""
@@ -659,26 +658,22 @@ def handle_bluetooth_disconnect():
         log(f"Bluetooth disconnect result:\n{result.stdout.strip()}", "info")
         if result.stderr:
             log(f"Bluetooth error:\n{result.stderr.strip()}", "error")
-    
-    # Wait a moment, then check status
-    time.sleep(10)
-    status = get_connected_bt_device()
+
+    time.sleep(5)
+    status = get_bt_connection_status()
+    client.publish(BLUETOOTH_STATUS_TOPIC, status, retain=True)
     if status == "not connected":
-        client.publish(BLUETOOTH_STATUS_TOPIC, json.dumps({"mac": None, "rssi": None}), retain=True)
-        log("Updated Bluetooth status after disconnect: not connected")
+        log("Bluetooth disconnected successfully")
     else:
-        client.publish(BLUETOOTH_STATUS_TOPIC, json.dumps(status), retain=True)
-        log(f"Unexpected Bluetooth status after disconnect: {status}")
+        log("Unexpected status after disconnect: still connected", "warning")
 
 
-def get_connected_bt_device():
+
+def get_bt_connection_status():
     """
-    Returns info about the connected Bluetooth device.
-    If no device is connected, returns 'not connected'.
-    If connected, returns dict with MAC and optional RSSI.
+    Returns "connected" if any paired device is connected, otherwise "not connected".
     """
     try:
-        # List paired devices
         result = subprocess.run(
             ['bluetoothctl', 'paired-devices'],
             capture_output=True,
@@ -693,42 +688,32 @@ def get_connected_bt_device():
             parts = line.strip().split()
             if len(parts) >= 2:
                 mac = parts[1]
-                # Check device info
                 info_result = subprocess.run(
                     ['bluetoothctl', 'info', mac],
                     capture_output=True,
                     text=True,
                     timeout=5
                 )
-                info = info_result.stdout
-                if "Connected: yes" in info:
-                    rssi = None
-                    for line in info.splitlines():
-                        if "RSSI" in line:
-                            rssi = line.split(":")[-1].strip()
-                            break
-                    return {"mac": mac, "rssi": rssi}
+                if "Connected: yes" in info_result.stdout:
+                    return "connected"
     except Exception as e:
         log(f"Bluetooth status error: {e}", "error")
 
     return "not connected"
 
 
+
 def bt_status_monitor_loop(interval=30):
     """Periodically check Bluetooth connection status and publish via MQTT."""
     last_status = None
     while True:
-        status = get_connected_bt_device()
+        status = get_bt_connection_status()
         if status != last_status:
-            if status == "not connected":
-                client.publish(BLUETOOTH_STATUS_TOPIC, "not connected", retain=True)
-            else:
-                mac = status["mac"]
-                rssi = status.get("rssi", "unknown")
-                payload = json.dumps({"mac": mac, "rssi": rssi})
-                client.publish(BLUETOOTH_STATUS_TOPIC, payload, retain=True)
-        last_status = status
+            client.publish(BLUETOOTH_STATUS_TOPIC, status, retain=True)
+            log(f"Bluetooth status updated: {status}")
+            last_status = status
         time.sleep(interval)
+
 
 # === MQTT FUNCTIONS ===
 def on_connect(client, userdata, flags, rc):
