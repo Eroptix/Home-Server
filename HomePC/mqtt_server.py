@@ -44,7 +44,7 @@ MQTT_PORT = 1783
 
 # Device information
 DEVICE_NAME = "homeserver"
-CURRENT_SW_VERSION = "1.0.10"
+CURRENT_SW_VERSION = "1.1.0"
 DEVICE_MODEL = "Home PC Server"
 DEVICE_MANUFACTURER = "BTM Engineering"
 
@@ -461,8 +461,10 @@ def setup_home_assistant_entities():
     publish_mqtt_button_discovery("Disconnect Bluetooth", BLUETOOTH_DISCONNECT_TOPIC, icon="mdi:bluetooth-off", optimistic=True)
 
     # Sensors
+    publish_mqtt_sensor_discovery("Info Log", LOG_INFO_TOPIC, icon="mdi:information-outline", entity_category="diagnostic")
+    publish_mqtt_sensor_discovery("Warning Log", LOG_WARNING_TOPIC, icon="mdi:shield-alert-outline", entity_category="diagnostic")
+    publish_mqtt_sensor_discovery("Error Log", LOG_ERROR_TOPIC, icon="mdi:alert-circle-outline", entity_category="diagnostic")
     publish_mqtt_sensor_discovery("Backup Status", BACKUP_STATUS_TOPIC, icon="mdi:backup-restore", entity_category="diagnostic")
-    publish_mqtt_sensor_discovery("Backup Log", BACKUP_LOG_TOPIC, icon="mdi:text-box-outline", entity_category="diagnostic")
     publish_mqtt_sensor_discovery("Software Version", STATUS_VERSION_TOPIC, icon="mdi:text-box-outline", entity_category="diagnostic")
 
     # Binary Sensors
