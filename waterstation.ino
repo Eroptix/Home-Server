@@ -29,7 +29,7 @@
 
 // Device-specific settings
 const char* deviceName = "waterstation";
-const char* currentSwVersion = "1.1.0";
+const char* currentSwVersion = "1.1.2";
 const char* deviceModel = "ESP32-NodeMCU";
 const char* deviceManufacturer = "BTM Engineering";
 String configurationUrl = "";
@@ -967,7 +967,7 @@ void sendDiscoveries()
   delay(100);
   publishMQTTSensorDiscovery("IR Sensor", IRsensor_topic, "mdi:storage-tank-outline", "cm", "distance", "measurement", "", 1);
   delay(100);
-  publishMQTTSensorDiscovery("Temperature", temperature_topic, "mdi:thermometer", "°C", "temperature", "measurement", "", 2);
+  publishMQTTSensorDiscovery("Temperature", temperature_topic, "mdi:thermometer", "°C", "temperature", "measurement", "", 1);
   delay(100);
   publishMQTTSensorDiscovery("Pressure", pressure_topic, "mdi:gauge", "hPa", "pressure", "measurement", "", 1);
   delay(100);
@@ -985,11 +985,11 @@ void sendDiscoveries()
   // Numbers
   publishMQTTNumberDiscovery("Pump Time", pump_time_command_topic, pump_time_state_topic, 1.0, 60.0, 1.0, "mdi:timer", "s", true);
   delay(100);
-  publishMQTTNumberDiscovery("Temperature Calibration", temp_calib_command_topic, temp_calib_state_topic, -10, 10, 0.1, "mdi:timer", "°C", true);
+  publishMQTTNumberDiscovery("Temperature Calibration", temp_calib_command_topic, temp_calib_state_topic, -10.0, 10.0, 0.1, "mdi:thermometer-plus", "°C", true);
   delay(100);
-  publishMQTTNumberDiscovery("Pressure Calibration", pres_calib_command_topic, pres_calib_state_topic, -100, 100, 1.0, "mdi:timer", "hPa", true);
+  publishMQTTNumberDiscovery("Pressure Calibration", pres_calib_command_topic, pres_calib_state_topic, -100, 100, 1.0, "mdi:gauge", "hPa", true);
   delay(100);
-  publishMQTTNumberDiscovery("Humidity Calibration", hum_calib_command_topic, hum_calib_state_topic, -100, 100, 1.0, "mdi:timer", "%", true);
+  publishMQTTNumberDiscovery("Humidity Calibration", hum_calib_command_topic, hum_calib_state_topic, -100, 100, 1.0, "mdi:water-percent", "%", true);
   delay(100);
 
   // Switches
@@ -1584,7 +1584,7 @@ void scanI2CDevices()
   }
 
   if (nDevices == 0)
-    Serial.println("❌ No I2C devices found. Check wiring!");
+    Serial.println("No I2C devices found. Check wiring!");
 }
 
 void readBME280() {
