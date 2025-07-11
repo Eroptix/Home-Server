@@ -19,6 +19,8 @@
 #include <HCSR04.h>
 #include <SharpIR.h>
 #include <Adafruit_MCP23X17.h>
+#include <Wire.h>
+#include <Adafruit_BME280.h>
 
 #define WIFI_SSID "UPC8F21BEF"
 #define WIFI_PASS "k7pp3aexkmQh"
@@ -27,7 +29,7 @@
 
 // Device-specific settings
 const char* deviceName = "waterstation";
-const char* currentSwVersion = "1.0.4";
+const char* currentSwVersion = "1.1.0";
 const char* deviceModel = "ESP32-NodeMCU";
 const char* deviceManufacturer = "BTM Engineering";
 String configurationUrl = "";
@@ -138,8 +140,18 @@ double calibIrB = 1;
 
 int pumpTime = 30;
 
+// Climate sensor
+float temperature = 0.0;
+float pressure = 0.0;
+float humidity = 0.0;
+
+float tempCalibration = 0.0;
+float presCalibration = 0.0;
+float humCalibration = 0.0;
+
 SharpIR sensor( SharpIR::GP2Y0A41SK0F, IRsensorPin );
 Adafruit_MCP23X17 mcp;
+Adafruit_BME280 bme;
 
 /************************** HomeAssistant Settings ***********************************/
 
@@ -177,12 +189,21 @@ String soil1_topic =                        String("home/") + deviceName + Strin
 String soil2_topic =                        String("home/") + deviceName + String("/moisture/soil2");
 String soil3_topic =                        String("home/") + deviceName + String("/moisture/soil3");
 String float_topic =                        String("home/") + deviceName + String("/float");
+String temperature_topic =                  String("home/") + deviceName + String("/temperature");
+String humidity_topic =                     String("home/") + deviceName + String("/humidity");
+String pressure_topic =                     String("home/") + deviceName + String("/pressure");
 
 // Numbers
 String pump_time_state_topic =              String("home/") + deviceName + String("/parameters/pumpTime/state");
 String pump_time_command_topic =            String("home/") + deviceName + String("/parameters/pumpTime/command");
 String refresh_rate_command_topic =         String("home/") + deviceName + String("/parameters/refreshRate/command");
 String refresh_rate_state_topic =           String("home/") + deviceName + String("/parameters/refreshRate/state");
+String temp_calib_state_topic =             String("home/") + deviceName + String("/parameters/tempCalib/state");
+String temp_calib_command_topic =           String("home/") + deviceName + String("/parameters/tempCalib/command");
+String pres_calib_state_topic =             String("home/") + deviceName + String("/parameters/presCalib/state");
+String pres_calib_command_topic =           String("home/") + deviceName + String("/parameters/presCalib/command");
+String hum_calib_state_topic =              String("home/") + deviceName + String("/parameters/humCalib/state");
+String hum_calib_command_topic =            String("home/") + deviceName + String("/parameters/humCalib/command");
 
 // Switches
 String pump1_state_topic =                  String("home/") + deviceName + String("/pumps/pump1/state");
@@ -220,6 +241,9 @@ bool connectMQTT()
       subscribeTopic(pump2_command_topic);
       subscribeTopic(pump_time_command_topic);
       subscribeTopic(refresh_rate_command_topic);
+      subscribeTopic(temp_calib_command_topic);
+      subscribeTopic(pres_calib_command_topic);
+      subscribeTopic(hum_calib_command_topic);
 
       // Send discovery payload
 	    sendDiscoveries();
@@ -279,6 +303,18 @@ void mqttCallback(char* topic, byte* payload, unsigned int length)
   else if (String(topic) == refresh_rate_command_topic) 
   {
     handleParameter("refreshRate", message);
+  }
+  else if (String(topic) == temp_calib_command_topic) 
+  {
+    handleParameter("tempCalibration", message);
+  }
+  else if (String(topic) == pres_calib_command_topic) 
+  {
+    handleParameter("presCalibration", message);
+  }
+  else if (String(topic) == hum_calib_command_topic) 
+  {
+    handleParameter("humCalibration", message);
   }
   else
   {
@@ -900,6 +936,12 @@ void sendDiscoveries()
   delay(100);
   publishMQTTSensorDiscovery("IR Sensor", IRsensor_topic, "mdi:storage-tank-outline", "cm", "distance", "measurement", "", 1);
   delay(100);
+  publishMQTTSensorDiscovery("Temperature", temperature_topic, "mdi:thermometer", "°C", "temperature", "measurement", "", 2);
+  delay(100);
+  publishMQTTSensorDiscovery("Pressure", pressure_topic, "mdi:gauge", "hPa", "pressure", "measurement", "", 1);
+  delay(100);
+  publishMQTTSensorDiscovery("Humidity", humidity_topic, "mdi:water-percent", "%", "humidity", "measurement", "", 1);
+  delay(100);
 
   // Binary Sensors
   publishMQTTBinarySensorDiscovery("LED", led_topic, "mdi:led-on", "light");
@@ -911,6 +953,12 @@ void sendDiscoveries()
 
   // Numbers
   publishMQTTNumberDiscovery("Pump Time", pump_time_command_topic, pump_time_state_topic, 1.0, 60.0, 1.0, "mdi:timer", "s", true);
+  delay(100);
+  publishMQTTNumberDiscovery("Temperature Calibration", temp_calib_command_topic, temp_calib_state_topic, -10, 10, 0.1, "mdi:timer", "°C", true);
+  delay(100);
+  publishMQTTNumberDiscovery("Pressure Calibration", pres_calib_command_topic, pres_calib_state_topic, -100, 100, 1.0, "mdi:timer", "hPa", true);
+  delay(100);
+  publishMQTTNumberDiscovery("Humidity Calibration", hum_calib_command_topic, hum_calib_state_topic, -100, 100, 1.0, "mdi:timer", "%", true);
   delay(100);
 
   // Switches
@@ -951,9 +999,6 @@ void setup(void)
 
   digitalWrite(pumpOnePin, LOW);
   digitalWrite(pumpTwoPin, LOW);
-
-  // Initalize ultrasonic sensor
-  HCSR04.begin(UStriggerPin, USechoPin);
 
   // Connect to WiFi
   wifiStatus = connectWifi();
@@ -996,6 +1041,19 @@ void setup(void)
   publishMessage(firmware_topic, currentSwVersion, true);
   publishMessage(log_info_topic, "Starting main loop", false);
   publishMessage(ip_topic, configurationUrl, true);
+
+  // Initialize BME sensor
+  Wire.begin(21, 22); 
+
+  if (!bme.begin(0x76)) { // or try 0x77 depending on your board
+    consoleLog("BME280 not found!", 3);
+  } else {
+    consoleLog("BME280 connected!", 1);
+  }
+
+  // Initalize ultrasonic sensor
+  HCSR04.begin(UStriggerPin, USechoPin);
+
 }
 
 /************************** Main loop ***********************************/
@@ -1064,6 +1122,8 @@ void loop(void)
     double IRlevel = readLevelInfrared();
     bool floatSensor = readFloatSensor();
 
+    readBME280();
+
     Serial.println("Reading sensors:");
     Serial.print("  US Level: ");
     Serial.println(USlevel);
@@ -1080,6 +1140,9 @@ void loop(void)
     publishMessage(USsensor_topic, USlevel, false);
     publishMessage(IRsensor_topic, IRlevel, false);
     publishMessage(float_topic, floatSensor ? "ON" : "OFF", false);
+    publishMessage(temperature_topic, temperature, false);
+    publishMessage(pressure_topic, pressure, false);
+    publishMessage(humidity_topic, humidity, false);
   }
 
   // Add delay to the loop
@@ -1189,6 +1252,18 @@ void handleParameter(String parameterName, String value)
   else if (parameterName == "refreshRate") 
   {
     refreshRate = value.toInt();
+  }
+  else if (parameterName == "tempCalibration") 
+  {
+    tempCalibration = value.toFloat();
+  }
+  else if (parameterName == "presCalibration") 
+  {
+    presCalibration = value.toFloat();
+  }
+  else if (parameterName == "humCalibration") 
+  {
+    humCalibration = value.toFloat();
   }
   else 
   {
@@ -1422,8 +1497,8 @@ double getWaterLevel(int numAvg)
 
   static double prevLevel = -1.0;
 
-  double ir = readLevelInfrared(numAvg);
-  double us = readLevelUltrasonic(numAvg);
+  double ir = readLevelInfrared();
+  double us = readLevelUltrasonic();
 
   bool irValid = (ir >= minValid && ir <= maxValid);
   bool usValid = (us >= minValid && us <= maxValid);
@@ -1467,12 +1542,12 @@ void scanI2CDevices()
     error = Wire.endTransmission();
 
     if (error == 0) {
-      Serial.print("✅ I2C device found at address 0x");
+      Serial.print("I2C device found at address 0x");
       Serial.println(address, HEX);
       nDevices++;
     }
     else if (error == 4) {
-      Serial.print("⚠️ Unknown error at 0x");
+      Serial.print("Unknown error at 0x");
       Serial.println(address, HEX);
     }
   }
@@ -1481,11 +1556,15 @@ void scanI2CDevices()
     Serial.println("❌ No I2C devices found. Check wiring!");
 }
 
+void readBME280() {
+  temperature = bme.readTemperature() + tempCalibration;
+  pressure = (bme.readPressure() / 100.0F) + presCalibration;
+  humidity = bme.readHumidity() + humCalibration;
 
-  }
-
-  prevLevel = level;
-  return level;
+  Serial.print("Temp: "); Serial.print(temperature); Serial.println(" °C");
+  Serial.print("Pressure: "); Serial.print(pressure); Serial.println(" hPa");
+  Serial.print("Humidity: "); Serial.print(humidity); Serial.println(" %");
 }
+
 
 

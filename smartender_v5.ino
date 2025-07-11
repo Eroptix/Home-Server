@@ -30,13 +30,13 @@
 
 // Device-specific settings
 const char* deviceName = "smartender";
-const char* currentSwVersion = "1.2.0";
+const char* currentSwVersion = "1.2.4";
 const char* deviceModel = "ESP32-NodeMCU";
 const char* deviceManufacturer = "BTM Engineering";
 String configurationUrl = "";
 String  firmwareUrl;
 String  latestSwVersion;
-bool debugMode = true;
+bool debugMode = false;
 
 // Pin layout
 /*                             +-----------------------+
@@ -224,7 +224,7 @@ bool connectMQTT()
   
   while (!client.connected() && attempts < 3) 
   {
-    if ( client.connect(mqtt_client_id) ) {
+    if (client.connect(mqtt_client_id, nullptr, nullptr, availability_topic.c_str(), 1, true, "connection lost")) {
 
       // Subscribe to command topics
       subscribeTopic(ota_response_topic);
@@ -917,6 +917,35 @@ void publishMQTTDiscoveryEntity(
   publishMessage(topic.c_str(), payload.c_str(), true);
 }
 
+void publishMQTTAvailabilityBinarySensor(String name, String availabilityTopic)
+{
+  String uniqueID = String(deviceName) + "-" + removeSpaces(name);
+  String objectID = String(deviceName) + "_" + removeSpaces(name);
+  String topic = "homeassistant/binary_sensor/" + uniqueID + "/config";
+
+  DynamicJsonDocument doc(512);
+  doc["name"] = name;
+  doc["unique_id"] = uniqueID;
+  doc["object_id"] = objectID;
+  doc["device_class"] = "connectivity";
+
+  // This is key — we use availability topic for state!
+  doc["state_topic"] = availabilityTopic;
+  doc["payload_on"] = "connected";
+  doc["payload_off"] = "connection lost";
+
+  JsonObject device = doc.createNestedObject("device");
+  JsonArray identifiers = device.createNestedArray("identifiers");
+  identifiers.add(deviceName);
+  device["name"] = deviceName;
+  device["model"] = deviceModel;
+  device["manufacturer"] = deviceManufacturer;
+
+  String payload;
+  serializeJson(doc, payload);
+  publishMessage(topic.c_str(), payload.c_str(), true);
+}
+
 // Send discovery topics to Home Assistant
 void sendDiscoveries()
 {
@@ -938,6 +967,8 @@ void sendDiscoveries()
   publishMQTTSensorDiscovery("WiFi Strength", wifi_strength_topic, "mdi:access-point", "", "", "", "diagnostic", -1);
   delay(100);
   publishMQTTSensorDiscovery("Calibration", calibration_topic, "mdi:calculator-variant-outline", "", "", "measurement", "diagnostic", 0);
+  delay(100);
+  publishMQTTAvailabilityBinarySensor("Availability", availability_topic);
   delay(100);
 
   // Sensors
