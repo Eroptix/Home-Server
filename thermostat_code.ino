@@ -98,7 +98,6 @@ double tempControlRange = 0.15;                     // Temperature control range
 int heaterSetting = offTemperature;                 // Current temperature setting for the heating logic (onTemperature or offTemperature)
 int tempGoal;                                       // Goal temperature setting for the heating logic
 int safetyTemp = 18;                                // Safety temperature when device loses connection
-bool autoMode = false;                              // Auto mode on/off state bool
 bool statusLCD = true;                               // LCD on/off state bool
 bool wifiStatus = false;                            // WiFi status indicator
 long wifiStrength;                                  // WiFi strength value
@@ -1154,8 +1153,25 @@ void setup()
     tempGoal = 20;    
   }
 
-  // Load mode
-  autoMode = EEPROM.read(MODE_ADDRESS);
+  // Load previous mode from EEPROM
+  char prevMode = EEPROM.read(MODE_ADDRESS);
+  if (prevMode == 'a')
+  {
+    mode = "auto";
+  }
+  else if (prevMode == 'h')
+  {
+    mode = "heat";
+  }
+  else if (prevMode == 'c')
+  {
+    mode = "cool";
+  }
+  else
+  {
+    Serial.print("No previous mode was found in the EEPROM");
+    mode = "cool";
+  }
 
   // Initialize Air Quality sensor
   Serial.print("ENS160...");
@@ -1324,17 +1340,28 @@ void loop()
       publishMessage(tvoc_topic, tvoc, false);   
       publishMessage(eco_topic, eco, false);
     
-      // Check for active mode
+      // Check for current mode
       if (mode == "auto")
       {
         tempGoal = tempSchedule[timeDay][timeStamp];
+        
+        Serial.print("Temperature Goal: ");
+        Serial.println(tempGoal);
+
+        // Set heating 
+        setTemperature(tempGoal,celsius);
       }
+      else if (mode == "heat")
+      {
+        Serial.print("Temperature Goal: ");
+        Serial.println(tempGoal);
 
-      Serial.print("Temperature Goal: ");
-      Serial.println(tempGoal);
-
-      // Set heating 
-      setTemperature(tempGoal,celsius);
+        // Set heating 
+        setTemperature(tempGoal,celsius);
+      }
+      else
+      {
+      }
 
       // Send climate entity data
       publishMessage(climate_temperature_current_topic, celsius, false);
@@ -1689,46 +1716,40 @@ void handleMode(String setMode)
 {
   if(setMode == "auto")
   {
-    autoMode = true;
     mode = "auto";
     Serial.print("    [RPC] Mode: ");
-    Serial.println(autoMode);
+    Serial.println(mode);
 
     // Save mode setup to EEPROM
-    EEPROM.write(MODE_ADDRESS, autoMode);
+    EEPROM.write(MODE_ADDRESS, 'a');
     EEPROM.commit();
 
-    // Just an response example
     publishMessage(mode_topic, mode, false);
     publishMessage(climate_mode_state_topic, mode, false);
   }
   if(setMode == "heat")
   {
-    autoMode = false;
     mode = "heat";
     Serial.print("    [RPC] Mode: ");
-    Serial.println(autoMode);
+    Serial.println(mode);
 
     // Save mode setup to EEPROM
-    EEPROM.write(MODE_ADDRESS, autoMode);
+    EEPROM.write(MODE_ADDRESS, 'h');
     EEPROM.commit();
 
-    // Just an response example
     publishMessage(mode_topic, mode, false);
     publishMessage(climate_mode_state_topic, mode, false);
   }
   if(setMode == "cool")
   {
-    autoMode = false;
     mode = "cool";
     Serial.print("    [RPC] Mode: ");
-    Serial.println(autoMode);
+    Serial.println(mode);
 
     // Save mode setup to EEPROM
-    EEPROM.write(MODE_ADDRESS, autoMode);
+    EEPROM.write(MODE_ADDRESS, 'c');
     EEPROM.commit();
 
-    // Just an response example
     publishMessage(mode_topic, mode, false);
     publishMessage(climate_mode_state_topic, mode, false);
   }
@@ -1789,55 +1810,6 @@ void handleCommand(String message)
     lcdCommand("display");
     lcdDate();
   }
-}
-
-// Handle parameters received via MQTT
-void handleParameters(const String& jsonPayload) 
-{
-    // Create a JSON document (adjust size if needed)
-    StaticJsonDocument<1024> doc;
-
-    // Deserialize the JSON
-    DeserializationError error = deserializeJson(doc, jsonPayload);
-    if (error) {
-        Serial.print("JSON Parsing Failed: ");
-        Serial.println(error.c_str());
-        return;
-    }
-
-    // Check if all expected parameters exist before assigning values
-    if (!doc.containsKey("onTemperature") ||
-        !doc.containsKey("offTemperature") ||
-        !doc.containsKey("tempControlRange") ||
-        !doc.containsKey("safetyTemp") ||
-        !doc.containsKey("refreshRate") ||
-        !doc.containsKey("timeOffset") ||
-        !doc.containsKey("tempOffset")) 
-    {
-        Serial.println("Error: Missing one or more required parameters.");
-        return;
-    }
-
-    // Extract values
-    onTemperature = doc["onTemperature"].as<int>();
-    offTemperature = doc["offTemperature"].as<int>();
-    tempControlRange = doc["tempControlRange"].as<float>();
-    safetyTemp = doc["safetyTemp"].as<int>();
-    refreshRate = doc["refreshRate"].as<int>();
-    timeOffset = doc["timeOffset"].as<int>();
-    tempCalibration = doc["tempOffset"].as<float>();
-
-    // Print extracted values
-    Serial.println("  Extracted Parameters:");
-    Serial.print("    onTemperature: "); Serial.println(onTemperature);
-    Serial.print("    offTemperature: "); Serial.println(offTemperature);
-    Serial.print("    tempControlRange: "); Serial.println(tempControlRange);
-    Serial.print("    safetyTemp: "); Serial.println(safetyTemp);
-    Serial.print("    refreshRate: "); Serial.println(refreshRate);
-    Serial.print("    timeOffset: "); Serial.println(timeOffset);
-    Serial.print("    tempOffset: "); Serial.println(tempCalibration);
-
-    lcdCommand("rec parameters");
 }
 
 // Handle parameters received via MQTT
