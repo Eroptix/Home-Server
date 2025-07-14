@@ -1889,7 +1889,7 @@ void handleParameter(String parameterName, String value)
   }
   else if (parameterName == "tempOffset") 
   {
-    tempCalibration = value.toInt();
+    tempCalibration = value.toDouble();
   }
   else 
   {
