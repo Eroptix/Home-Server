@@ -226,7 +226,7 @@ String display_command_topic =              String("home/") + deviceName + Strin
 String ontemperature_state_topic =          String("home/") + deviceName + String("/parameters/ontemperature/state");
 String ontemperature_command_topic =        String("home/") + deviceName + String("/parameters/ontemperature/command");
 String offtemperature_state_topic =         String("home/") + deviceName + String("/parameters/offtemperature/state");
-String offtemperature_commandtopic =        String("home/") + deviceName + String("/parameters/offtemperature/command");
+String offtemperature_command_topic =        String("home/") + deviceName + String("/parameters/offtemperature/command");
 String tempcontrolrange_state_topic =       String("home/") + deviceName + String("/parameters/tempcontrolrange/state");
 String tempcontrolrange_command_topic =     String("home/") + deviceName + String("/parameters/tempcontrolrange/command");
 String safetytemp_state_topic =             String("home/") + deviceName + String("/parameters/safetytemp/state");
@@ -1019,10 +1019,8 @@ void sendDiscoveries()
   delay(100);
 
   // Climate
-  publishMQTTClimateDiscovery("thermostat", "climate"); 
+  publishMQTTClimateDiscovery("thermostat", climate_temperature_current_topic, climate_temperature_state_topic, climate_temperature_command_topic, climate_mode_state_topic, climate_mode_command_topic); 
 }
-
-/************************** Setup function ***********************************/
 
 void setup() 
 {
@@ -1063,7 +1061,7 @@ void setup()
   lcd.createChar(4, wifiOFF);
   lcd.createChar(5, heatOn);
   lcd.createChar(6, heatOff);
-  lcd(true);
+  setLCDBacklight(true);
 
   // Display current firmware version
   lcd.clear();
@@ -1659,7 +1657,7 @@ void lcdDate()
   delay(5000);
 }
 
-void lcd(bool state)
+void setLCDBacklight(bool state)
 {
     statusLCD = state;
     
@@ -1671,7 +1669,7 @@ void lcd(bool state)
     else 
     {
       Serial.println("LCD: OFF");
-      lcd.nobacklight();
+      lcd.noBacklight();
     }
 
     publishMessage(display_state_topic, statusLCD ? "ON" : "OFF", false); 
@@ -1774,7 +1772,6 @@ void handleCommand(String message)
   {
     Serial.println("Command received: Parameter Send");
     lcdCommand("sd parameter");
-    sendParameters();
   }
   if (message == "send discoveries") 
   {
@@ -1908,10 +1905,10 @@ void handleLCD(String message)
 {
   if (message == "manual on") 
   {
-    lcd(true);
+    setLCDBacklight(true);
   } 
   else if (message == "manual off") 
   {
-    lcd(false);
+    setLCDBacklight(false);
   }
 }
