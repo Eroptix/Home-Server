@@ -226,7 +226,7 @@ String display_command_topic =              String("home/") + deviceName + Strin
 String ontemperature_state_topic =          String("home/") + deviceName + String("/parameters/ontemperature/state");
 String ontemperature_command_topic =        String("home/") + deviceName + String("/parameters/ontemperature/command");
 String offtemperature_state_topic =         String("home/") + deviceName + String("/parameters/offtemperature/state");
-String offtemperature_command_topic =        String("home/") + deviceName + String("/parameters/offtemperature/command");
+String offtemperature_command_topic =       String("home/") + deviceName + String("/parameters/offtemperature/command");
 String tempcontrolrange_state_topic =       String("home/") + deviceName + String("/parameters/tempcontrolrange/state");
 String tempcontrolrange_command_topic =     String("home/") + deviceName + String("/parameters/tempcontrolrange/command");
 String safetytemp_state_topic =             String("home/") + deviceName + String("/parameters/safetytemp/state");
@@ -235,8 +235,10 @@ String refreshRate_state_topic =            String("home/") + deviceName + Strin
 String refreshRate_command_topic =          String("home/") + deviceName + String("/parameters/refreshRate/command");
 String timeoffset_state_topic =             String("home/") + deviceName + String("/parameters/timeoffset/state");
 String timeoffset_command_topic =           String("home/") + deviceName + String("/parameters/timeoffset/command");
-String tempoffset_state_topic =             String("home/") + deviceName + String("/parameters/tempoffset/state");
-String tempoffset_command_topic =           String("home/") + deviceName + String("/parameters/tempoffset/command");
+String tempCalibration_state_topic =        String("home/") + deviceName + String("/parameters/tempoffset/state");
+String tempCalibration_command_topic =      String("home/") + deviceName + String("/parameters/tempoffset/command");
+String humCalibration_state_topic =         String("home/") + deviceName + String("/parameters/humoffset/state");
+String humCalibration_command_topic =       String("home/") + deviceName + String("/parameters/humoffset/command");
 
 // Initalize the Mqtt client instance
 WiFiClient espClient;
@@ -265,8 +267,9 @@ bool connectMQTT()
       subscribeTopic(safetytemp_command_topic);
       subscribeTopic(refreshRate_command_topic);
       subscribeTopic(timeoffset_command_topic);
-      subscribeTopic(tempoffset_command_topic);
+      subscribeTopic(tempCalibration_command_topic);
       subscribeTopic(display_command_topic);
+      subscribeTopic(humCalibration_command_topic);
 
       // Send discovery payload
 	    sendDiscoveries();
@@ -347,9 +350,13 @@ void mqttCallback(char* topic, byte* payload, unsigned int length)
   {
     handleParameter("timeOffset",message);
   }
-  else if (String(topic) == tempoffset_command_topic) 
+  else if (String(topic) == tempCalibration_command_topic) 
   {
-    handleParameter("tempOffset",message);
+    handleParameter("tempCalibration",message);
+  }
+  else if (String(topic) == humCalibration_command_topic) 
+  {
+    handleParameter("humCalibration",message);
   }
   else
   {
@@ -979,11 +986,11 @@ void sendDiscoveries()
   delay(100);
 
   // Sensors
-  publishMQTTSensorDiscovery("Temperature", temperature_topic, "mdi:home-thermometer", "°C", "temperature", "measurement", "", 2);
+  publishMQTTSensorDiscovery("Temperature", temperature_topic, "mdi:home-thermometer", "°C", "temperature", "measurement", "", 1);
   delay(100);
   publishMQTTSensorDiscovery("Pressure", pressure_topic, "mdi:gauge", "hPa", "pressure", "measurement", "", 0);
   delay(100);
-  publishMQTTSensorDiscovery("Humidity", humidity_topic, "mdi:water-percent", "%", "humidity", "measurement", "", 2);
+  publishMQTTSensorDiscovery("Humidity", humidity_topic, "mdi:water-percent", "%", "humidity", "measurement", "", 1);
   delay(100);
   publishMQTTSensorDiscovery("Temp Goal", tempgoal_topic, "mdi:target", "°C", "temperature", "measurement", "", 0);
   delay(100);
@@ -1003,15 +1010,17 @@ void sendDiscoveries()
   delay(100);
   publishMQTTNumberDiscovery("Off Temperature", offtemperature_command_topic, offtemperature_state_topic, 10, 30, 1.0, "mdi:thermometer-minus", "°C", true);
   delay(100);
-  publishMQTTNumberDiscovery("Control Range", tempcontrolrange_command_topic, tempoffset_state_topic, 0, 1, 0.01, "mdi:car-cruise-control", "°C", true);
+  publishMQTTNumberDiscovery("Control Range", tempcontrolrange_command_topic, tempCalibration_state_topic, 0, 1, 0.01, "mdi:car-cruise-control", "°C", true);
   delay(100);
   publishMQTTNumberDiscovery("Safety Temperature", safetytemp_command_topic, safetytemp_state_topic, 10, 30, 1.0, "mdi:thermometer-check", "°C", true);
   delay(100);
-  publishMQTTNumberDiscovery("Refresh Rate", refreshRate_command_topic, refreshRate_state_topic, 10, 1000, 10, "mdi:refresh", "min", true);
+  publishMQTTNumberDiscovery("Refresh Rate", refreshRate_command_topic, refreshRate_state_topic, 10, 1000, 10, "mdi:refresh", "s", true);
   delay(100);
   publishMQTTNumberDiscovery("Time Offset", timeoffset_command_topic, timeoffset_command_topic, -5, 5, 1.0, "mdi:map-clock", "h", true);
   delay(100);
-  publishMQTTNumberDiscovery("Temperature Offset", tempoffset_command_topic, tempoffset_state_topic, -10, 10, 0.1, "mdi:thermometer-lines", "°C", true);
+  publishMQTTNumberDiscovery("Temperature Offset", tempCalibration_command_topic, tempCalibration_state_topic, -10, 10, 0.1, "mdi:thermometer-lines", "°C", true);
+  delay(100);
+  publishMQTTNumberDiscovery("Humidity Offset", humCalibration_command_topic, humCalibration_state_topic, -50, 50, 1.0, "mdi:thermometer-lines", "%", true);
   delay(100);
 
   // Switches
@@ -1881,30 +1890,42 @@ void handleParameter(String parameterName, String value)
   if (parameterName == "onTemperature") 
   {
     onTemperature = value.toInt();
+    publishMessage(onTemperature_state_topic, onTemperature, true);
   }
   else if (parameterName == "offTemperature") 
   {
     offTemperature = value.toInt();
+    publishMessage(offTemperature_state_topic, offTemperature, true);
   }
   else if (parameterName == "tempControlRange") 
   {
-    tempControlRange = value.toInt();
+    tempControlRange = value.toDouble();
+    publishMessage(tempcontrolrange_state_topic, tempControlRange, true);
   }
   else if (parameterName == "safetyTemp") 
   {
     safetyTemp = value.toInt();
+    publishMessage(safetytemp_state_topic, safetyTemp, true);
   }
   else if (parameterName == "refreshRate") 
   {
     refreshRate = value.toInt();
+    publishMessage(refreshRate_state_topic, refreshRate, true);
   }
   else if (parameterName == "timeOffset") 
   {
     timeOffset = value.toInt();
+    publishMessage(timeoffset_state_topic, timeOffset, true);
   }
-  else if (parameterName == "tempOffset") 
+  else if (parameterName == "tempCalibration") 
   {
     tempCalibration = value.toDouble();
+    publishMessage(tempCalibration_state_topic, tempCalibration, true);
+  }
+  else if (parameterName == "humCalibration") 
+  {
+    humCalibration = value.toDouble();
+    publishMessage(humCalibration_state_topic, humCalibration, true);
   }
   else 
   {
