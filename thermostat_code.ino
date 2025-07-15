@@ -34,7 +34,7 @@
 
 // Device-specific settings
 const char* deviceName = "thermostat";
-const char* currentSwVersion = "1.5.0";
+const char* currentSwVersion = "1.5.1";
 const char* deviceModel = "ESP32-NodeMCU";
 const char* deviceManufacturer = "BTM Engineering";
 String configurationUrl = "";
@@ -1156,18 +1156,21 @@ void setup()
   if (prevMode == 'a')
   {
     mode = "auto";
+    consoleLog("Loaded |AUTO| mode from EEPROM", 1);
   }
   else if (prevMode == 'h')
   {
     mode = "heat";
+    consoleLog("Loaded |HEAT| mode from EEPROM", 1);
   }
   else if (prevMode == 'c')
   {
     mode = "cool";
+    consoleLog("Loaded |COOL| mode from EEPROM", 1);
   }
   else
   {
-    Serial.print("No previous mode was found in the EEPROM");
+    consoleLog("No previous mode was found in the EEPROM", 2);
     mode = "cool";
   }
 
@@ -1189,7 +1192,6 @@ void setup()
 
   // Trigger next measurement loop
   triggerLoop();
-
 }
 
 /************************** Main loop ***********************************/
@@ -1240,6 +1242,7 @@ void loop()
       }
   }
 
+   // Main operational loop
   if (manualTrigger || (currentMillis - previousMillisMain >= refreshRate * 1000)) 
   { 
     previousMillisMain = currentMillis;
@@ -1276,7 +1279,8 @@ void loop()
     Serial.println(" hPa");
 
     // Read Air Quality sensor
-    if (ens160.available()) {
+    if (ens160.available()) 
+    {
       ens160.measure(true);
       ens160.measureRaw(true);
 
@@ -1341,24 +1345,35 @@ void loop()
       // Check for current mode
       if (mode == "auto")
       {
+        // Temperature control in AUTO mode
         tempGoal = tempSchedule[timeDay][timeStamp];
         
-        Serial.print("Temperature Goal: ");
+        Serial.println("AUTO mode active");
+        Serial.print("  Temperature Goal: ");
         Serial.println(tempGoal);
 
-        // Set heating 
         setTemperature(tempGoal,celsius);
       }
       else if (mode == "heat")
       {
-        Serial.print("Temperature Goal: ");
+        // Temperature control in HEAT mode
+        Serial.println("HEAT mode active");
+        Serial.print("  Temperature Goal: ");
         Serial.println(tempGoal);
 
-        // Set heating 
         setTemperature(tempGoal,celsius);
+      }
+      else if (mode == "cool")
+      {
+        // Temperature control in COOL mode
+        Serial.println("COOL mode active");
+        Serial.println("Temperature Goal: 10");
+
+        setTemperature(10,celsius);
       }
       else
       {
+        consoleLog("Unknown climate mode selected", 3);
       }
 
       // Send climate entity data
