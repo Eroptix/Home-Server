@@ -78,17 +78,17 @@ int previousAngle;                                  // Previous angle setting
 int servoLastAngle = 90;                            // Last servo angle before reboot
 
 // Refresh loop parameters
-int refreshRate = 60;                       // Measurement loop length [s]
+int refreshRate = 60;                               // Measurement loop length [s]
 int refreshLoop = 1;                                // Number of refresh loops
 int connectRate = 300;                              // Connection check loop length [s]
 bool manualTrigger = false;  
 unsigned long previousMillisMain = 0;
 unsigned long previousMillisMQTT = 0;               // MQTT reconnect timing
 unsigned long previousMillisWiFi = 0;               // WiFi reconnect timing
-unsigned long mqttReconnectInterval = 5000;   // Check MQTT every 5 seconds
-unsigned long wifiReconnectInterval = 5000;   // Check WiFi every 5 seconds 
-unsigned long wifiRetryMaxInterval = 30000;    // 30 seconds max
-unsigned long mqttRetryMaxInterval = 60000;    // 60 seconds max 
+unsigned long mqttReconnectInterval = 5000;         // Check MQTT every 5 seconds
+unsigned long wifiReconnectInterval = 5000;         // Check WiFi every 5 seconds 
+unsigned long wifiRetryMaxInterval = 30000;         // 30 seconds max
+unsigned long mqttRetryMaxInterval = 60000;         // 60 seconds max 
 
 
 // Temperature control parameters
@@ -98,7 +98,7 @@ double tempControlRange = 0.15;                     // Temperature control range
 int heaterSetting = offTemperature;                 // Current temperature setting for the heating logic (onTemperature or offTemperature)
 int tempGoal;                                       // Goal temperature setting for the heating logic
 int safetyTemp = 18;                                // Safety temperature when device loses connection
-bool statusLCD = true;                               // LCD on/off state bool
+bool statusLCD = true;                              // LCD on/off state bool
 bool wifiStatus = false;                            // WiFi status indicator
 long wifiStrength;                                  // WiFi strength value
 String mode = "heat";                               // Active temperature control mode (auto, heat, cool, off)
@@ -872,6 +872,35 @@ void publishMQTTClimateDiscovery(String name, String climate_temperature_current
     publishMessage(topic.c_str(), payload.c_str(), true);
 }
 
+void publishMQTTAvailabilityBinarySensor(String name, String availabilityTopic)
+{
+  String uniqueID = String(deviceName) + "-" + removeSpaces(name);
+  String objectID = String(deviceName) + "_" + removeSpaces(name);
+  String topic = "homeassistant/binary_sensor/" + uniqueID + "/config";
+
+  DynamicJsonDocument doc(512);
+  doc["name"] = name;
+  doc["unique_id"] = uniqueID;
+  doc["object_id"] = objectID;
+  doc["device_class"] = "connectivity";
+
+  // This is key — we use availability topic for state!
+  doc["state_topic"] = availabilityTopic;
+  doc["payload_on"] = "connected";
+  doc["payload_off"] = "connection lost";
+
+  JsonObject device = doc.createNestedObject("device");
+  JsonArray identifiers = device.createNestedArray("identifiers");
+  identifiers.add(deviceName);
+  device["name"] = deviceName;
+  device["model"] = deviceModel;
+  device["manufacturer"] = deviceManufacturer;
+
+  String payload;
+  serializeJson(doc, payload);
+  publishMessage(topic.c_str(), payload.c_str(), true);
+}
+
 // Create dynamic discovery payload
 void publishMQTTDiscoveryEntity(
   String name,
@@ -983,6 +1012,8 @@ void sendDiscoveries()
   publishMQTTSensorDiscovery("WiFi Strength", wifi_strength_topic, "mdi:access-point", "", "", "", "diagnostic", -1);
   delay(100);
   publishMQTTSensorDiscovery("CPU Temperature", cpu_temp_topic, "mdi:cpu-32-bit", "°C", "temperature", "measurement", "diagnostic", 0);
+  delay(100);
+  publishMQTTAvailabilityBinarySensor("Availability", availability_topic);
   delay(100);
 
   // Sensors
