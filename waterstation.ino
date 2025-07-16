@@ -29,7 +29,7 @@
 
 // Device-specific settings
 const char* deviceName = "waterstation";
-const char* currentSwVersion = "1.1.2";
+const char* currentSwVersion = "1.1.3";
 const char* deviceModel = "ESP32-NodeMCU";
 const char* deviceManufacturer = "BTM Engineering";
 String configurationUrl = "";
@@ -1144,6 +1144,9 @@ void loop(void)
     upTime = (refreshLoop * refreshRate) / 60; // Return uptime in minutes
     Serial.print("Loop Number: ");
     Serial.println(refreshLoop);
+
+    // Announce availability
+    publishMessage(availability_topic, "connected", true);
 
     // Diagnostics
     wifiStrength = WiFi.RSSI();
