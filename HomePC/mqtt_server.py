@@ -643,23 +643,23 @@ def select_random_song(folder_path):
     Select a random .mp3 file from a folder.
     """
     if not os.path.exists(folder_path):
-        print(f"Folder not found: {folder_path}")
+        log(f"Folder not found: {folder_path}","error")
         return None
 
     try:
         # List only mp3 files
         mp3_files = [f for f in os.listdir(folder_path) if f.lower().endswith(".mp3")]
         if not mp3_files:
-            print(f"No mp3 files found in: {folder_path}")
+            log(f"No mp3 files found in: {folder_path}","error")
             return None
 
         selected = random.choice(mp3_files)
         selected_path = os.path.join(folder_path, selected)
-        print(f"Selected song: {selected_path}")
+        log(f"Selected song: {selected_path}")
         return selected_path
 
     except Exception as e:
-        print(f"Error reading folder {folder_path}: {e}")
+        log(f"Error reading folder {folder_path}: {e}","error")
         return None
 
 
