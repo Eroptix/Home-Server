@@ -74,6 +74,10 @@ STATUS_DISK_TOTAL_TOPIC =                   f"home/{DEVICE_NAME}/status/disk/tot
 STATUS_DISK_USED_TOPIC =                    f"home/{DEVICE_NAME}/status/disk/used"
 STATUS_DISK_FREE_TOPIC =                    f"home/{DEVICE_NAME}/status/disk/free"
 STATUS_DISK_PERCENTAGE_TOPIC =              f"home/{DEVICE_NAME}/status/disk/percentage"
+STATUS_EXTERNAL_TOTAL_TOPIC =               f"home/{DEVICE_NAME}/status/external/total"
+STATUS_EXTERNAL_USED_TOPIC =                f"home/{DEVICE_NAME}/status/external/used"
+STATUS_EXTERNAL_FREE_TOPIC =                f"home/{DEVICE_NAME}/status/external/free"
+STATUS_EXTERNAL_PERCENTAGE_TOPIC =          f"home/{DEVICE_NAME}/status/external/percentage"
 STATUS_MEMORY_TOTAL_TOPIC =                 f"home/{DEVICE_NAME}/status/memory/total"
 STATUS_MEMORY_USED_TOPIC =                  f"home/{DEVICE_NAME}/status/memory/used"
 STATUS_MEMORY_PERCENTAGE_TOPIC =            f"home/{DEVICE_NAME}/status/memory/percentage"
@@ -176,6 +180,17 @@ def get_mounted_drives_info(exclude_roots=True):
                 "error": str(e)
             }
     return external_drives
+
+
+def publish_drive_status(path="/mnt/ssd", base_topic="home/homeserver/ssd"):
+    try:
+        usage = psutil.disk_usage(path)
+        mqtt_client.publish(STATUS_EXTERNAL_TOTAL_TOPIC, round(usage.total / (1024**3), 1), retain=False)
+        mqtt_client.publish(STATUS_EXTERNAL_USED_TOPIC, round(usage.used / (1024**3), 1), retain=False)
+        mqtt_client.publish(STATUS_EXTERNAL_FREE_TOPIC, round(usage.free / (1024**3), 1), retain=False)
+        mqtt_client.publish(STATUS_EXTERNAL_PERCENTAGE_TOPIC, usage.percent, retain=False)
+    except Exception as e:
+        mqtt_client.publish(LOG_ERROR_TOPIC, str(e), retain=False)
 
 
 def collect_system_status():
@@ -469,6 +484,10 @@ def setup_home_assistant_entities():
     publish_mqtt_sensor_discovery("Backup Status", BACKUP_STATUS_TOPIC, icon="mdi:backup-restore", entity_category="diagnostic")
     publish_mqtt_sensor_discovery("Software Version", STATUS_VERSION_TOPIC, icon="mdi:text-box-outline", entity_category="diagnostic")
     publish_mqtt_sensor_discovery("Bluetooth Status", BLUETOOTH_STATUS_TOPIC, icon="mdi:bluetooth", entity_category="diagnostic")
+    publish_mqtt_sensor_discovery("SSD Free", STATUS_EXTERNAL_FREE_TOPIC, icon="mdi:harddisk-plus", entity_category="diagnostic")
+    publish_mqtt_sensor_discovery("SSD Used", STATUS_EXTERNAL_USED_TOPIC, icon="mdi:harddisk-remove", entity_category="diagnostic")
+    publish_mqtt_sensor_discovery("SSD Total", STATUS_EXTERNAL_TOTAL_TOPIC, icon="mdi:harddisk", entity_category="diagnostic")
+    publish_mqtt_sensor_discovery("SSD Percentage", STATUS_EXTERNAL_PERCENTAGE_TOPIC, icon="mdi:percent-outline", entity_category="diagnostic")
 
     # Binary Sensors
     publish_mqtt_binary_sensor_discovery("MQTT Server Status", AVAILABILITY_TOPIC, icon="mdi:server", device_class="connectivity")
@@ -668,7 +687,6 @@ def handle_bluetooth_disconnect():
         log("Unexpected status after disconnect: still connected", "warning")
 
 
-
 def get_bt_connection_status():
     """
     Returns "connected" if any paired device is connected, otherwise "not connected".
@@ -702,11 +720,11 @@ def get_bt_connection_status():
     return "not connected"
 
 
-
 def bt_status_monitor_loop(interval=30):
     """Periodically check Bluetooth connection status and publish via MQTT."""
     last_status = None
     while True:
+        publish_drive_status()
         status = get_bt_connection_status()
         if status != last_status:
             client.publish(BLUETOOTH_STATUS_TOPIC, status, retain=True)
