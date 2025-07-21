@@ -231,7 +231,7 @@ def collect_system_status():
 
     return status
 
-# === HOME ASSISTANT MQTT DISCOVERY FUNCTIONS ===
+# === HOME ASSISTANT MQTT ===
 def publish_mqtt_sensor_discovery(name, state_topic, icon="", unit_of_measurement="",
                                   device_class="", state_class="", entity_category="",
                                   display_precision=None):
