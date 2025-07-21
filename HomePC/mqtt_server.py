@@ -46,7 +46,7 @@ client = None
 
 # Device information
 DEVICE_NAME = "homeserver"
-CURRENT_SW_VERSION = "1.1.6"
+CURRENT_SW_VERSION = "1.1.7"
 DEVICE_MODEL = "Home PC Server"
 DEVICE_MANUFACTURER = "BTM Engineering"
 
@@ -82,6 +82,7 @@ STATUS_EXTERNAL_PERCENTAGE_TOPIC =          f"home/{DEVICE_NAME}/status/external
 STATUS_MEMORY_TOTAL_TOPIC =                 f"home/{DEVICE_NAME}/status/memory/total"
 STATUS_MEMORY_USED_TOPIC =                  f"home/{DEVICE_NAME}/status/memory/used"
 STATUS_MEMORY_PERCENTAGE_TOPIC =            f"home/{DEVICE_NAME}/status/memory/percentage"
+PLAY_ALBUM_TOPIC =                          f"home/{DEVICE_NAME}/music/play_album"
 
 # Backup script
 BACKUP_SCRIPT_URL = "https://raw.githubusercontent.com/Eroptix/Home-Server/refs/heads/main/HomePC/backup_script.sh"
@@ -797,6 +798,7 @@ def on_connect(client, userdata, flags, rc):
         client.subscribe(BLUETOOTH_CONNECT_TOPIC)
         client.subscribe(BLUETOOTH_DISCONNECT_TOPIC)
         client.subscribe(BACKUP_RUN_TOPIC)
+        client.subscribe(PLAY_ALBUM_TOPIC)
 
         # Publish availability
         client.publish(AVAILABILITY_TOPIC, "connected", retain=True)
@@ -833,6 +835,8 @@ def on_message(client, userdata, msg):
             handle_backup()
         elif topic == AUDIO_TOPIC:
             play_audio(payload, False)
+        elif topic == PLAY_ALBUM_TOPIC:
+            play_album(payload)
         else:
             log(f"Unknown command topic: {topic}", "warning")
 
