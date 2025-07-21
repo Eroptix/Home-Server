@@ -486,10 +486,10 @@ def setup_home_assistant_entities():
     publish_mqtt_sensor_discovery("Backup Status", BACKUP_STATUS_TOPIC, icon="mdi:backup-restore", entity_category="diagnostic")
     publish_mqtt_sensor_discovery("Software Version", STATUS_VERSION_TOPIC, icon="mdi:text-box-outline", entity_category="diagnostic")
     publish_mqtt_sensor_discovery("Bluetooth Status", BLUETOOTH_STATUS_TOPIC, icon="mdi:bluetooth", entity_category="diagnostic")
-    publish_mqtt_sensor_discovery("SSD Free", STATUS_EXTERNAL_FREE_TOPIC, icon="mdi:harddisk-plus", entity_category="diagnostic")
-    publish_mqtt_sensor_discovery("SSD Used", STATUS_EXTERNAL_USED_TOPIC, icon="mdi:harddisk-remove", entity_category="diagnostic")
-    publish_mqtt_sensor_discovery("SSD Total", STATUS_EXTERNAL_TOTAL_TOPIC, icon="mdi:harddisk", entity_category="diagnostic")
-    publish_mqtt_sensor_discovery("SSD Percentage", STATUS_EXTERNAL_PERCENTAGE_TOPIC, icon="mdi:percent-outline", entity_category="diagnostic")
+    publish_mqtt_sensor_discovery("SSD Free", STATUS_EXTERNAL_FREE_TOPIC, icon="mdi:harddisk-plus", entity_category="diagnostic", unit_of_measurement="GB")
+    publish_mqtt_sensor_discovery("SSD Used", STATUS_EXTERNAL_USED_TOPIC, icon="mdi:harddisk-remove", entity_category="diagnostic", unit_of_measurement="GB")
+    publish_mqtt_sensor_discovery("SSD Total", STATUS_EXTERNAL_TOTAL_TOPIC, icon="mdi:harddisk", entity_category="diagnostic", unit_of_measurement="GB")
+    publish_mqtt_sensor_discovery("SSD Percentage", STATUS_EXTERNAL_PERCENTAGE_TOPIC, icon="mdi:percent-outline", entity_category="diagnostic", unit_of_measurement="%")
 
     # Binary Sensors
     publish_mqtt_binary_sensor_discovery("MQTT Server Status", AVAILABILITY_TOPIC, icon="mdi:server", device_class="connectivity")
