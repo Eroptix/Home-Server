@@ -12,6 +12,7 @@ import platform
 import socket
 import shutil
 import time
+import random
 
 # === Logging Setup with Rotation ===
 LOG_DIR = "./logs"
@@ -640,7 +641,6 @@ def play_audio(file_path, cleanup=True):
 def select_random_song(folder_path):
     """
     Select a random .mp3 file from a folder.
-
     """
     if not os.path.exists(folder_path):
         print(f"Folder not found: {folder_path}")
@@ -654,7 +654,9 @@ def select_random_song(folder_path):
             return None
 
         selected = random.choice(mp3_files)
-        return os.path.join(folder_path, selected)
+        selected_path = os.path.join(folder_path, selected)
+        print(f"Selected song: {selected_path}")
+        return selected_path
 
     except Exception as e:
         print(f"Error reading folder {folder_path}: {e}")
