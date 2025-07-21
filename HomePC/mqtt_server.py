@@ -42,10 +42,11 @@ logging.basicConfig(
 # MQTT settings
 MQTT_BROKER = "192.168.0.241"
 MQTT_PORT = 1783
+client = None 
 
 # Device information
 DEVICE_NAME = "homeserver"
-CURRENT_SW_VERSION = "1.1.4"
+CURRENT_SW_VERSION = "1.1.5"
 DEVICE_MODEL = "Home PC Server"
 DEVICE_MANUFACTURER = "BTM Engineering"
 
@@ -182,7 +183,8 @@ def get_mounted_drives_info(exclude_roots=True):
     return external_drives
 
 
-def publish_drive_status(path="/mnt/ssd", base_topic="home/homeserver/ssd"):
+def publish_drive_status(path="/mnt/ssd"):
+    global client
     try:
         usage = psutil.disk_usage(path)
         mqtt_client.publish(STATUS_EXTERNAL_TOTAL_TOPIC, round(usage.total / (1024**3), 1), retain=False)
@@ -723,6 +725,7 @@ def get_bt_connection_status():
 def bt_status_monitor_loop(interval=30):
     """Periodically check Bluetooth connection status and publish via MQTT."""
     last_status = None
+    global client
     while True:
         publish_drive_status()
         status = get_bt_connection_status()
