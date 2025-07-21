@@ -187,12 +187,12 @@ def publish_drive_status(path="/mnt/ssd"):
     global client
     try:
         usage = psutil.disk_usage(path)
-        mqtt_client.publish(STATUS_EXTERNAL_TOTAL_TOPIC, round(usage.total / (1024**3), 1), retain=False)
-        mqtt_client.publish(STATUS_EXTERNAL_USED_TOPIC, round(usage.used / (1024**3), 1), retain=False)
-        mqtt_client.publish(STATUS_EXTERNAL_FREE_TOPIC, round(usage.free / (1024**3), 1), retain=False)
-        mqtt_client.publish(STATUS_EXTERNAL_PERCENTAGE_TOPIC, usage.percent, retain=False)
+        client.publish(STATUS_EXTERNAL_TOTAL_TOPIC, round(usage.total / (1024**3), 1), retain=False)
+        client.publish(STATUS_EXTERNAL_USED_TOPIC, round(usage.used / (1024**3), 1), retain=False)
+        client.publish(STATUS_EXTERNAL_FREE_TOPIC, round(usage.free / (1024**3), 1), retain=False)
+        client.publish(STATUS_EXTERNAL_PERCENTAGE_TOPIC, usage.percent, retain=False)
     except Exception as e:
-        mqtt_client.publish(LOG_ERROR_TOPIC, str(e), retain=False)
+        client.publish(LOG_ERROR_TOPIC, str(e), retain=False)
 
 
 def collect_system_status():
