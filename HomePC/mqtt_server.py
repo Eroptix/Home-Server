@@ -599,6 +599,20 @@ def generate_tts(text):
     return None
 
 
+def handle_tts(payload):
+    """Handle TTS request"""
+    log(f"TTS requested: {payload}")
+    if not payload.strip():
+        log("Empty TTS payload, ignoring","warning")
+        return
+
+    audio_file = generate_tts(payload)
+    if audio_file:
+        play_audio(audio_file, False)
+    else:
+        log("Failed to generate TTS audio", "error")
+
+# === AUDIO ===
 def play_audio(file_path, cleanup=True):
     """Play audio file and optionally clean up"""
     try:
@@ -622,19 +636,56 @@ def play_audio(file_path, cleanup=True):
                 pass
 
 
-def handle_tts(payload):
-    """Handle TTS request"""
-    log(f"TTS requested: {payload}")
-    if not payload.strip():
-        log("Empty TTS payload, ignoring","warning")
+def select_random_song(folder_path):
+    """
+    Select a random .mp3 file from a folder.
+
+    """
+    if not os.path.exists(folder_path):
+        print(f"Folder not found: {folder_path}")
+        return None
+
+    try:
+        # List only mp3 files
+        mp3_files = [f for f in os.listdir(folder_path) if f.lower().endswith(".mp3")]
+        if not mp3_files:
+            print(f"No mp3 files found in: {folder_path}")
+            return None
+
+        selected = random.choice(mp3_files)
+        return os.path.join(folder_path, selected)
+
+    except Exception as e:
+        print(f"Error reading folder {folder_path}: {e}")
+        return None
+
+
+def play_album(folder_path):
+    """Play a random track from the album after Bluetooth is connected."""
+    log(f"Starting album playback from: {folder_path}")
+
+    # Select random song
+    song_path = select_random_song(folder_path)
+    if not song_path:
+        log("No valid song selected. Aborting playback.", "error")
         return
 
-    audio_file = generate_tts(payload)
-    if audio_file:
-        play_audio(audio_file, False)
-    else:
-        log("Failed to generate TTS audio", "error")
+    # Connect to Bluetooth soundbar
+    handle_bluetooth_connect()
 
+    # Optional extra wait (Bluetooth can be slow to fully connect audio sink)
+    log("Waiting for Bluetooth audio to be ready...")
+    for i in range(10):
+        status = get_bt_connection_status()
+        if status == "connected":
+            break
+        time.sleep(1)
+    else:
+        log("Bluetooth did not connect after 10 seconds", "error")
+        return
+
+    # Play selected audio
+    play_audio(song_path, cleanup=False)
 
 # === BLUETOOTH ===
 def btctl(command):
@@ -734,7 +785,6 @@ def bt_status_monitor_loop(interval=30):
             log(f"Bluetooth status updated: {status}")
             last_status = status
         time.sleep(interval)
-
 
 # === MQTT FUNCTIONS ===
 def on_connect(client, userdata, flags, rc):
