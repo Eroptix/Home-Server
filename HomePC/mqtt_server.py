@@ -612,7 +612,7 @@ def handle_tts(payload):
     else:
         log("Failed to generate TTS audio", "error")
 
-# === AUDIO ===
+# === AUDIO/MUSIC ===
 def play_audio(file_path, cleanup=True):
     """Play audio file and optionally clean up"""
     try:
