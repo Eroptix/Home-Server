@@ -47,7 +47,7 @@ client = None
 
 # Device information
 DEVICE_NAME = "homeserver"
-CURRENT_SW_VERSION = "1.1.8"
+CURRENT_SW_VERSION = "1.1.9"
 DEVICE_MODEL = "Home PC Server"
 DEVICE_MANUFACTURER = "BTM Engineering"
 
@@ -711,21 +711,35 @@ def btctl(command):
 
 
 def handle_bluetooth_connect():
-    """Connect to Bluetooth device"""
-    log("Connecting to Bluetooth soundbar")
-    result = btctl(f"connect {BT_SOUNDBAR_MAC}")
-    if result:
+    """Connect to Bluetooth device using bluez-tools (bt-device)"""
+    log("Connecting to Bluetooth soundbar...")
+
+    try:
+        result = subprocess.run(
+            ['bt-device', '--connect', BT_SOUNDBAR_MAC],
+            capture_output=True,
+            text=True,
+            timeout=10
+        )
+
         log(f"Bluetooth connect result:\n{result.stdout.strip()}", "info")
-        if result.stderr:
+        if result.stderr.strip():
             log(f"Bluetooth error:\n{result.stderr.strip()}", "error")
 
-    time.sleep(20)  # Wait for connection to settle
+    except Exception as e:
+        log(f"Bluetooth connect command failed: {e}", "error")
+        return
+
+    # Give some time for connection to settle
+    time.sleep(10)
+
     status = get_bt_connection_status()
     client.publish(BLUETOOTH_STATUS_TOPIC, status, retain=True)
+
     if status == "connected":
-        log("Bluetooth device connected successfully")
+        log("Bluetooth device connected successfully ✅")
     else:
-        log("Bluetooth connection failed or not established", "warning")
+        log("Bluetooth connection failed or not established ❌", "warning")
 
 
 def handle_bluetooth_disconnect():
@@ -746,47 +760,45 @@ def handle_bluetooth_disconnect():
         log("Unexpected status after disconnect: still connected", "warning")
 
 
-def get_bt_connection_status():
+def get_bt_connection_status(mac_address=None):
     """
-    Returns "connected" if any paired device is connected, otherwise "not connected".
-    Logs intermediate steps for debugging.
+    Returns "connected" if the specified MAC address is connected.
+    If mac_address is None, checks all paired devices.
     """
     try:
         result = subprocess.run(
-            ['bluetoothctl', 'paired-devices'],
+            ['bt-device', '--list'],
             capture_output=True,
             text=True,
             timeout=5
         )
-        paired_output = result.stdout.strip()
-        log(f"Paired devices output:\n{paired_output}", "info")
-
-        devices = paired_output.splitlines()
-        if not devices:
-            log("No paired Bluetooth devices found.", "info")
+        lines = result.stdout.strip().splitlines()
+        if not lines:
             return "not connected"
 
-        for line in devices:
-            parts = line.strip().split()
-            if len(parts) >= 2:
-                mac = parts[1]
-                info_result = subprocess.run(
-                    ['bluetoothctl', 'info', mac],
-                    capture_output=True,
-                    text=True,
-                    timeout=5
-                )
-                info_output = info_result.stdout.strip()
-                log(f"Device info for {mac}:\n{info_output}", "info")
+        devices = []
+        for line in lines:
+            if line.strip():
+                mac = line.strip().split()[0]
+                devices.append(mac)
 
-                if "Connected: yes" in info_output:
-                    log(f"Bluetooth device {mac} is connected.", "info")
-                    return "connected"
+        # Only check one device if provided
+        if mac_address:
+            devices = [mac_address]
+
+        for mac in devices:
+            info = subprocess.run(
+                ['bt-device', '--info', mac],
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
+            if "Connected: 1" in info.stdout:
+                return "connected"
 
     except Exception as e:
-        log(f"Bluetooth status error: {e}", "error")
+        print(f"Bluetooth check error: {e}")
 
-    log("No connected Bluetooth devices found.", "info")
     return "not connected"
 
 
