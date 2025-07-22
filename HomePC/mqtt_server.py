@@ -620,10 +620,13 @@ def handle_tts(payload):
 def play_audio(file_path, cleanup=True):
     """Play audio file and optionally clean up"""
     try:
+        # Kill any existing ffplay processes
+        stop_existing_audio()
+
         # Set up environment variables for audio playback
         env = os.environ.copy()
-        env["XDG_RUNTIME_DIR"] = "/run/user/1000"  # Adjust this if your UID is different
-        env["DISPLAY"] = ":0"  # Often needed if PulseAudio or GUI context is used
+        env["XDG_RUNTIME_DIR"] = "/run/user/1000"
+        env["DISPLAY"] = ":0"
 
         subprocess.Popen([
             "ffplay", "-nodisp", "-autoexit", "-loglevel", "quiet", file_path
@@ -638,6 +641,19 @@ def play_audio(file_path, cleanup=True):
                 os.remove(file_path)
             except OSError:
                 pass
+
+def stop_existing_audio():
+    """Stop all existing ffplay audio playback processes"""
+    for proc in psutil.process_iter(['name', 'cmdline']):
+        try:
+            if 'ffplay' in proc.info['name'] or (
+                proc.info['cmdline'] and 'ffplay' in proc.info['cmdline'][0]
+            ):
+                proc.terminate()  # Or use proc.kill() for immediate stop
+                proc.wait(timeout=3)
+                log("Stopped existing ffplay process", "info")
+        except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.TimeoutExpired):
+            pass
 
 
 def select_random_song(folder_path):
