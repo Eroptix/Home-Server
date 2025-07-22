@@ -745,9 +745,12 @@ def handle_bluetooth_disconnect():
         log("Unexpected status after disconnect: still connected", "warning")
 
 
+import subprocess
+
 def get_bt_connection_status():
     """
     Returns "connected" if any paired device is connected, otherwise "not connected".
+    Logs intermediate steps for debugging.
     """
     try:
         result = subprocess.run(
@@ -756,8 +759,12 @@ def get_bt_connection_status():
             text=True,
             timeout=5
         )
-        devices = result.stdout.strip().splitlines()
+        paired_output = result.stdout.strip()
+        log(f"Paired devices output:\n{paired_output}", "info")
+
+        devices = paired_output.splitlines()
         if not devices:
+            log("No paired Bluetooth devices found.", "info")
             return "not connected"
 
         for line in devices:
@@ -770,12 +777,19 @@ def get_bt_connection_status():
                     text=True,
                     timeout=5
                 )
-                if "Connected: yes" in info_result.stdout:
+                info_output = info_result.stdout.strip()
+                log(f"Device info for {mac}:\n{info_output}", "info")
+
+                if "Connected: yes" in info_output:
+                    log(f"Bluetooth device {mac} is connected.", "info")
                     return "connected"
+
     except Exception as e:
         log(f"Bluetooth status error: {e}", "error")
 
+    log("No connected Bluetooth devices found.", "info")
     return "not connected"
+
 
 
 def bt_status_monitor_loop(interval=30):
