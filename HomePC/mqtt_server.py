@@ -642,6 +642,7 @@ def play_audio(file_path, cleanup=True):
             except OSError:
                 pass
 
+
 def stop_existing_audio():
     """Stop all existing ffplay audio playback processes"""
     for proc in psutil.process_iter(['name', 'cmdline']):
@@ -808,11 +809,10 @@ def bt_status_monitor_loop(interval=30):
     global client
     while True:
         publish_drive_status()
-        #status = get_bt_connection_status()
-        #if status != last_status:
-        #    client.publish(BLUETOOTH_STATUS_TOPIC, status, retain=True)
-        #    log(f"Bluetooth status updated: {status}")
-        #    last_status = status
+        status = get_bt_connection_status()
+        if status != last_status:
+            client.publish(BLUETOOTH_STATUS_TOPIC, status, retain=True)
+            last_status = status
         time.sleep(interval)
 
 
