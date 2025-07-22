@@ -47,7 +47,7 @@ client = None
 
 # Device information
 DEVICE_NAME = "homeserver"
-CURRENT_SW_VERSION = "1.1.9"
+CURRENT_SW_VERSION = "1.2.0"
 DEVICE_MODEL = "Home PC Server"
 DEVICE_MANUFACTURER = "BTM Engineering"
 
@@ -695,27 +695,27 @@ def play_album(folder_path):
 
 # === BLUETOOTH ===
 def handle_bluetooth_connect():
-    """Connect to Bluetooth device using bluez-tools (bt-device)"""
+    """Connect to Bluetooth device using D-Bus via busctl"""
     log("Connecting to Bluetooth soundbar...")
 
+    device_path = f"/org/bluez/hci0/dev_{BT_SOUNDBAR_MAC.replace(':', '_')}"
     try:
         result = subprocess.run(
-            ['bt-device', '--connect', BT_SOUNDBAR_MAC],
+            ['busctl', 'call', 'org.bluez', device_path, 'org.bluez.Device1', 'Connect'],
             capture_output=True,
             text=True,
             timeout=10
         )
 
-        log(f"Bluetooth connect result:\n{result.stdout.strip()}", "info")
+        log(f"D-Bus connect result:\n{result.stdout.strip()}", "info")
         if result.stderr.strip():
-            log(f"Bluetooth error:\n{result.stderr.strip()}", "error")
+            log(f"D-Bus error:\n{result.stderr.strip()}", "error")
 
     except Exception as e:
-        log(f"Bluetooth connect command failed: {e}", "error")
+        log(f"D-Bus connect command failed: {e}", "error")
         return
 
-    # Give some time for connection to settle
-    time.sleep(10)
+    time.sleep(5)
 
     status = get_bt_connection_status()
     client.publish(BLUETOOTH_STATUS_TOPIC, status, retain=True)
@@ -727,85 +727,63 @@ def handle_bluetooth_connect():
 
 
 def handle_bluetooth_disconnect():
-    """Disconnect from Bluetooth device using bluez-tools"""
+    """Disconnect from Bluetooth device using D-Bus"""
     log("Disconnecting from Bluetooth soundbar...")
 
+    device_path = f"/org/bluez/hci0/dev_{BT_SOUNDBAR_MAC.replace(':', '_')}"
     try:
         result = subprocess.run(
-            ['bt-device', '--disconnect', BT_SOUNDBAR_MAC],
+            ['busctl', 'call', 'org.bluez', device_path, 'org.bluez.Device1', 'Disconnect'],
             capture_output=True,
             text=True,
             timeout=10
         )
 
-        stdout = result.stdout.strip()
-        stderr = result.stderr.strip()
-
-        log(f"Bluetooth disconnect result:\n{stdout}", "info")
-        if stderr:
-            # Sometimes you may get warnings/errors if already disconnected, treat accordingly
-            if "not connected" in stderr.lower():
-                log("Device already disconnected (error ignored) ✅", "info")
-            else:
-                log(f"Bluetooth error:\n{stderr}", "error")
+        log(f"D-Bus disconnect result:\n{result.stdout.strip()}", "info")
+        if result.stderr.strip():
+            log(f"D-Bus error:\n{result.stderr.strip()}", "error")
 
     except Exception as e:
-        log(f"Bluetooth disconnect command failed: {e}", "error")
+        log(f"D-Bus disconnect command failed: {e}", "error")
         return
 
-    # Wait for disconnection to settle
     time.sleep(5)
 
-    # Check status after disconnect
-    status = get_bt_connection_status(BT_SOUNDBAR_MAC)
+    status = get_bt_connection_status()
     client.publish(BLUETOOTH_STATUS_TOPIC, status, retain=True)
 
     if status == "not connected":
-        log("Bluetooth disconnected successfully ✅")
+        log("Bluetooth disconnected successfully")
     else:
-        log("Unexpected status after disconnect: still connected ❌", "warning")
+        log("Unexpected status after disconnect: still connected", "warning")
+
 
 
 def get_bt_connection_status(mac_address=None):
     """
     Returns "connected" if the specified MAC address is connected.
-    If mac_address is None, checks all paired devices.
+    If mac_address is None, uses BT_SOUNDBAR_MAC.
     """
+    if not mac_address:
+        mac_address = BT_SOUNDBAR_MAC
+
+    device_path = f"/org/bluez/hci0/dev_{mac_address.replace(':', '_')}"
+
     try:
         result = subprocess.run(
-            ['bt-device', '--list'],
+            ['busctl', 'get-property', 'org.bluez', device_path, 'org.bluez.Device1', 'Connected'],
             capture_output=True,
             text=True,
             timeout=5
         )
-        lines = result.stdout.strip().splitlines()
-        if not lines:
-            return "not connected"
 
-        devices = []
-        for line in lines:
-            if line.strip():
-                mac = line.strip().split()[0]
-                devices.append(mac)
-
-        # Only check one device if provided
-        if mac_address:
-            devices = [mac_address]
-
-        for mac in devices:
-            info = subprocess.run(
-                ['bt-device', '--info', mac],
-                capture_output=True,
-                text=True,
-                timeout=5
-            )
-            if "Connected: 1" in info.stdout:
-                return "connected"
-
+        if "true" in result.stdout:
+            return "connected"
     except Exception as e:
-        print(f"Bluetooth check error: {e}")
+        print(f"Bluetooth status check error: {e}")
 
     return "not connected"
+
 
 
 def bt_status_monitor_loop(interval=30):
