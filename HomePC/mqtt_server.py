@@ -47,7 +47,7 @@ client = None
 
 # Device information
 DEVICE_NAME = "homeserver"
-CURRENT_SW_VERSION = "1.1.7"
+CURRENT_SW_VERSION = "1.1.8"
 DEVICE_MODEL = "Home PC Server"
 DEVICE_MANUFACTURER = "BTM Engineering"
 
@@ -614,6 +614,7 @@ def handle_tts(payload):
     else:
         log("Failed to generate TTS audio", "error")
 
+
 # === AUDIO/MUSIC ===
 def play_audio(file_path, cleanup=True):
     """Play audio file and optionally clean up"""
@@ -690,6 +691,7 @@ def play_album(folder_path):
     # Play selected audio
     play_audio(song_path, cleanup=False)
 
+
 # === BLUETOOTH ===
 def btctl(command):
     """Execute bluetoothctl command safely using input"""
@@ -716,7 +718,7 @@ def handle_bluetooth_connect():
         if result.stderr:
             log(f"Bluetooth error:\n{result.stderr.strip()}", "error")
 
-    time.sleep(5)  # Wait for connection to settle
+    time.sleep(20)  # Wait for connection to settle
     status = get_bt_connection_status()
     client.publish(BLUETOOTH_STATUS_TOPIC, status, retain=True)
     if status == "connected":
@@ -788,6 +790,7 @@ def bt_status_monitor_loop(interval=30):
             log(f"Bluetooth status updated: {status}")
             last_status = status
         time.sleep(interval)
+
 
 # === MQTT FUNCTIONS ===
 def on_connect(client, userdata, flags, rc):
