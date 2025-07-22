@@ -871,7 +871,7 @@ def on_message(client, userdata, msg):
         elif topic == AUDIO_TOPIC:
             play_audio(payload, False)
         elif topic == PLAY_ALBUM_TOPIC:
-            play_album(payload)
+            select_random_song(payload)
         else:
             log(f"Unknown command topic: {topic}", "warning")
 
