@@ -694,22 +694,6 @@ def play_album(folder_path):
 
 
 # === BLUETOOTH ===
-def btctl(command):
-    """Execute bluetoothctl command safely using input"""
-    try:
-        result = subprocess.run(
-            ["bluetoothctl"],
-            input=command + "\n",
-            capture_output=True,
-            text=True,
-            timeout=10
-        )
-        return result
-    except subprocess.TimeoutExpired:
-        log("Bluetooth command timed out", "error")
-        return None
-
-
 def handle_bluetooth_connect():
     """Connect to Bluetooth device using bluez-tools (bt-device)"""
     log("Connecting to Bluetooth soundbar...")
@@ -737,27 +721,49 @@ def handle_bluetooth_connect():
     client.publish(BLUETOOTH_STATUS_TOPIC, status, retain=True)
 
     if status == "connected":
-        log("Bluetooth device connected successfully ✅")
+        log("Bluetooth device connected successfully")
     else:
-        log("Bluetooth connection failed or not established ❌", "warning")
+        log("Bluetooth connection failed or not established", "error")
 
 
 def handle_bluetooth_disconnect():
-    """Disconnect from Bluetooth device"""
-    log("Disconnecting from Bluetooth soundbar")
-    result = btctl(f"disconnect {BT_SOUNDBAR_MAC}")
-    if result:
-        log(f"Bluetooth disconnect result:\n{result.stdout.strip()}", "info")
-        if result.stderr:
-            log(f"Bluetooth error:\n{result.stderr.strip()}", "error")
+    """Disconnect from Bluetooth device using bluez-tools"""
+    log("Disconnecting from Bluetooth soundbar...")
 
+    try:
+        result = subprocess.run(
+            ['bt-device', '--disconnect', BT_SOUNDBAR_MAC],
+            capture_output=True,
+            text=True,
+            timeout=10
+        )
+
+        stdout = result.stdout.strip()
+        stderr = result.stderr.strip()
+
+        log(f"Bluetooth disconnect result:\n{stdout}", "info")
+        if stderr:
+            # Sometimes you may get warnings/errors if already disconnected, treat accordingly
+            if "not connected" in stderr.lower():
+                log("Device already disconnected (error ignored) ✅", "info")
+            else:
+                log(f"Bluetooth error:\n{stderr}", "error")
+
+    except Exception as e:
+        log(f"Bluetooth disconnect command failed: {e}", "error")
+        return
+
+    # Wait for disconnection to settle
     time.sleep(5)
-    status = get_bt_connection_status()
+
+    # Check status after disconnect
+    status = get_bt_connection_status(BT_SOUNDBAR_MAC)
     client.publish(BLUETOOTH_STATUS_TOPIC, status, retain=True)
+
     if status == "not connected":
-        log("Bluetooth disconnected successfully")
+        log("Bluetooth disconnected successfully ✅")
     else:
-        log("Unexpected status after disconnect: still connected", "warning")
+        log("Unexpected status after disconnect: still connected ❌", "warning")
 
 
 def get_bt_connection_status(mac_address=None):
@@ -800,7 +806,6 @@ def get_bt_connection_status(mac_address=None):
         print(f"Bluetooth check error: {e}")
 
     return "not connected"
-
 
 
 def bt_status_monitor_loop(interval=30):
