@@ -775,7 +775,6 @@ def handle_bluetooth_disconnect():
         log("Unexpected status after disconnect: still connected", "warning")
 
 
-
 def get_bt_connection_status(mac_address=None):
     """
     Returns "connected" if the specified MAC address is connected.
@@ -800,7 +799,6 @@ def get_bt_connection_status(mac_address=None):
         print(f"Bluetooth status check error: {e}")
 
     return "not connected"
-
 
 
 def bt_status_monitor_loop(interval=30):
