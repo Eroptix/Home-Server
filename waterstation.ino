@@ -138,6 +138,15 @@ double calibUsB = 1;
 double calibIrA = 0;
 double calibIrB = 1;
 
+// Smoothing
+double smoothedUS = -1.0;                           // -1.0 means "not yet initialized"
+const double alphaUS = 0.2;                         // Smoothing factor (tune this)
+
+// Reading rejection
+double lastUSReading = -1.0;
+const double maxReadingJump = 15.0;                 // You can tune this
+
+// Safety pump time
 int pumpTime = 30;
 
 // Climate sensor
@@ -1134,7 +1143,7 @@ void loop(void)
   
   client.loop();
 
-  // Standby loop
+  // Monitoring loop
   if (currentMillis - previousMillis1 >= refreshRate * 1000) 
   { 
     previousMillis1 = currentMillis;
@@ -1156,6 +1165,10 @@ void loop(void)
     double IRlevel = readLevelInfrared();
     bool floatSensor = readFloatSensor();
 
+    // Add smooting and noise reduction
+    USlevel = smoothValue(smoothedUS, USlevel, alphaUS);
+
+    // Read enviroument parameters from BME280
     readBME280();
 
     Serial.println("Reading sensors:");
@@ -1177,6 +1190,38 @@ void loop(void)
     publishMessage(temperature_topic, temperature, false);
     publishMessage(pressure_topic, pressure, false);
     publishMessage(humidity_topic, humidity, false);
+  }
+
+  // Pumping loop
+  if (pumpStatus[1]) 
+  { 
+
+    // Read sensors
+    double USlevel = readLevelUltrasonic();
+    double IRlevel = readLevelInfrared();
+    bool floatSensor = readFloatSensor();
+
+    // Add smooting and noise reduction
+    USlevel = smoothValue(smoothedUS, USlevel, alphaUS);
+
+    Serial.println("Reading sensors:");
+    Serial.print("  US Level: ");
+    Serial.println(USlevel);
+    Serial.print("  IR Level: ");
+    Serial.println(IRlevel);
+    Serial.print("  Float Sensor: ");
+    Serial.println(floatSensor);
+
+    // Pump safety turn off
+    if(USlevel > 40)
+    {
+      pump(1,false);
+    }
+
+    // Send telemetry to Home Assistant
+    publishMessage(USsensor_topic, USlevel, false);
+    publishMessage(IRsensor_topic, IRlevel, false);
+    publishMessage(float_topic, floatSensor ? "ON" : "OFF", false);
   }
 
   // Add delay to the loop
@@ -1403,6 +1448,23 @@ void led(bool state)
     publishMessage(led_topic, statusLED ? "ON" : "OFF", false); 
 }
 
+double smoothValue(double& smoothedVar, double current, double alpha) 
+{
+  if (current < 0) {
+    // Skip smoothing if the current value is invalid
+    return smoothedVar;
+  }
+
+  if (smoothedVar < 0) {
+    // Initialize on first valid reading
+    smoothedVar = current;
+  } else {
+    smoothedVar = alpha * current + (1.0 - alpha) * smoothedVar;
+  }
+
+  return smoothedVar;
+}
+
 double readLevelUltrasonic()
 {
   const int numSamples = 20;
@@ -1450,6 +1512,21 @@ double readLevelUltrasonic()
   Serial.print("Ultrasonic distance (filtered avg): ");
   Serial.print(distance);
   Serial.println(" cm");
+
+  // Filters
+  if (lastUSReading >= 0 && abs(distance - lastUSReading) > maxReadingJump) 
+  {
+    Serial.println("Rejected US reading: Sudden jump");
+    return -1.0;
+  }
+  if (distance >= 50 || distance <= 10) 
+  {
+    Serial.println("Rejected US reading: Unrealistic value");
+    return -1.0;
+  }
+
+  // Succesful reading -> Saving as last measurement
+  lastUSReading = distance;
 
   return distance;
 }
