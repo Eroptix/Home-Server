@@ -198,6 +198,7 @@ String fan_topic =                          String("home/") + deviceName + Strin
 String IRsensor_topic =                     String("home/") + deviceName + String("/IRsensor");
 String USsensor_topic =                     String("home/") + deviceName + String("/USsensor");
 String waterLevel_topic =                   String("home/") + deviceName + String("/waterLevel");
+String percentFull_topic =                  String("home/") + deviceName + String("/percentFul");
 String soil1_topic =                        String("home/") + deviceName + String("/moisture/soil1");
 String soil2_topic =                        String("home/") + deviceName + String("/moisture/soil2");
 String soil3_topic =                        String("home/") + deviceName + String("/moisture/soil3");
@@ -984,6 +985,8 @@ void sendDiscoveries()
   delay(100);
   publishMQTTSensorDiscovery("Water Level", waterLevel_topic, "mdi:wawes-arrow-up", "cm", "distance", "measurement", "", 1);
   delay(100);
+  publishMQTTSensorDiscovery("Tank Percentage", percentFull_topic, "mdi:percent-box-outline", "%", "", "measurement", "", 1);
+  delay(100);
   publishMQTTSensorDiscovery("Temperature", temperature_topic, "mdi:thermometer", "°C", "temperature", "measurement", "", 1);
   delay(100);
   publishMQTTSensorDiscovery("Pressure", pressure_topic, "mdi:gauge", "hPa", "pressure", "measurement", "", 1);
@@ -1177,6 +1180,7 @@ void loop(void)
 
     // Calculate water level
     waterLevel = getWaterLevel(USlevel, IRlevel);
+    double percentFull = (waterLevel / containerHeight) * 100.0;
 
     // Read enviroument parameters from BME280
     readBME280();
@@ -1190,6 +1194,8 @@ void loop(void)
     Serial.println(floatSensor);
     Serial.print("  Water Level: ");
     Serial.println(waterLevel);
+    Serial.print("  Fill Percentage: ");
+    Serial.println(percentFull);
 
     // Send diagnostics to Home Assistant
     publishMessage(wifi_strength_topic, (double)wifiStrength, false);
@@ -1216,6 +1222,7 @@ void loop(void)
 
     // Calculate water level
     waterLevel = getWaterLevel(USlevel, IRlevel);
+    double percentFull = (waterLevel / containerHeight) * 100.0;
 
     Serial.println("Reading sensors:");
     Serial.print("  US Level: ");
