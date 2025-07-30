@@ -1205,6 +1205,7 @@ void loop(void)
     publishMessage(USsensor_topic, USlevel, false);
     publishMessage(IRsensor_topic, IRlevel, false);
     publishMessage(waterLevel_topic, waterLevel, false);
+    publishMessage(percentFull_topic, percentFull, false);
     publishMessage(float_topic, floatSensor ? "ON" : "OFF", false);
     publishMessage(temperature_topic, temperature, false);
     publishMessage(pressure_topic, pressure, false);
@@ -1233,6 +1234,8 @@ void loop(void)
     Serial.println(floatSensor);
     Serial.print("  Water Level: ");
     Serial.println(waterLevel);
+    Serial.print("  Fill Percentage: ");
+    Serial.println(percentFull);
 
     // Pump safety turn off
     if(waterLevel < 10)
