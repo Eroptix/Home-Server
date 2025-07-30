@@ -29,7 +29,7 @@
 
 // Device-specific settings
 const char* deviceName = "waterstation";
-const char* currentSwVersion = "1.1.3";
+const char* currentSwVersion = "1.2.0";
 const char* deviceModel = "ESP32-NodeMCU";
 const char* deviceManufacturer = "BTM Engineering";
 String configurationUrl = "";
@@ -132,15 +132,19 @@ unsigned long mqttRetryMaxInterval = 60000;         // 60 seconds max
 bool wifiStatus = false;                            // WiFi status indicator
 long wifiStrength;                                  // WiFi strength value 
 
+// Water station parameters
+double containerHeight = 42.0;
+double waterLevel = -1.0;
+
 // Calibration constants
 double calibUsA = 0;
 double calibUsB = 1;
 double calibIrA = 0;
 double calibIrB = 1;
 
-// Smoothing
-double smoothedUS = -1.0;                           // -1.0 means "not yet initialized"
-const double alphaUS = 0.2;                         // Smoothing factor (tune this)
+// Smoothing water level readings
+double smoothedLevel = -1.0;                           // -1.0 means "not yet initialized"
+const double alphaLevel = 0.2;                         // Smoothing factor (tune this)
 
 // Reading rejection
 double lastUSReading = -1.0;
@@ -153,7 +157,6 @@ int pumpTime = 30;
 float temperature = 0.0;
 float pressure = 0.0;
 float humidity = 0.0;
-
 float tempCalibration = 0.0;
 float presCalibration = 0.0;
 float humCalibration = 0.0;
@@ -194,6 +197,7 @@ String led_topic =                          String("home/") + deviceName + Strin
 String fan_topic =                          String("home/") + deviceName + String("/fan");
 String IRsensor_topic =                     String("home/") + deviceName + String("/IRsensor");
 String USsensor_topic =                     String("home/") + deviceName + String("/USsensor");
+String waterLevel_topic =                   String("home/") + deviceName + String("/waterLevel");
 String soil1_topic =                        String("home/") + deviceName + String("/moisture/soil1");
 String soil2_topic =                        String("home/") + deviceName + String("/moisture/soil2");
 String soil3_topic =                        String("home/") + deviceName + String("/moisture/soil3");
@@ -976,6 +980,8 @@ void sendDiscoveries()
   delay(100);
   publishMQTTSensorDiscovery("IR Sensor", IRsensor_topic, "mdi:storage-tank-outline", "cm", "distance", "measurement", "", 1);
   delay(100);
+  publishMQTTSensorDiscovery("Water Level", waterLevel_topic, "mdi:wawes-arrow-up", "cm", "distance", "measurement", "", 1);
+  delay(100);
   publishMQTTSensorDiscovery("Temperature", temperature_topic, "mdi:thermometer", "°C", "temperature", "measurement", "", 1);
   delay(100);
   publishMQTTSensorDiscovery("Pressure", pressure_topic, "mdi:gauge", "hPa", "pressure", "measurement", "", 1);
@@ -1165,8 +1171,8 @@ void loop(void)
     double IRlevel = readLevelInfrared();
     bool floatSensor = readFloatSensor();
 
-    // Add smooting and noise reduction
-    USlevel = smoothValue(smoothedUS, USlevel, alphaUS);
+    // Calculate water level
+    waterLevel = getWaterLevel(USlevel, IRlevel);
 
     // Read enviroument parameters from BME280
     readBME280();
@@ -1178,6 +1184,8 @@ void loop(void)
     Serial.println(IRlevel);
     Serial.print("  Float Sensor: ");
     Serial.println(floatSensor);
+    Serial.print("  Water Level: ");
+    Serial.println(waterLevel);
 
     // Send diagnostics to Home Assistant
     publishMessage(wifi_strength_topic, (double)wifiStrength, false);
@@ -1186,6 +1194,7 @@ void loop(void)
     // Send telemetry to Home Assistant
     publishMessage(USsensor_topic, USlevel, false);
     publishMessage(IRsensor_topic, IRlevel, false);
+    publishMessage(waterLevel_topic, waterLevel, false);
     publishMessage(float_topic, floatSensor ? "ON" : "OFF", false);
     publishMessage(temperature_topic, temperature, false);
     publishMessage(pressure_topic, pressure, false);
@@ -1201,8 +1210,8 @@ void loop(void)
     double IRlevel = readLevelInfrared();
     bool floatSensor = readFloatSensor();
 
-    // Add smooting and noise reduction
-    USlevel = smoothValue(smoothedUS, USlevel, alphaUS);
+    // Calculate water level
+    waterLevel = getWaterLevel(USlevel, IRlevel);
 
     Serial.println("Reading sensors:");
     Serial.print("  US Level: ");
@@ -1211,9 +1220,11 @@ void loop(void)
     Serial.println(IRlevel);
     Serial.print("  Float Sensor: ");
     Serial.println(floatSensor);
+    Serial.print("  Water Level: ");
+    Serial.println(waterLevel);
 
     // Pump safety turn off
-    if(USlevel > 40)
+    if(waterLevel < 10)
     {
       pump(1,false);
     }
@@ -1222,6 +1233,7 @@ void loop(void)
     publishMessage(USsensor_topic, USlevel, false);
     publishMessage(IRsensor_topic, IRlevel, false);
     publishMessage(float_topic, floatSensor ? "ON" : "OFF", false);
+    publishMessage(waterLevel_topic, waterLevel, false);
   }
 
   // Add delay to the loop
@@ -1513,21 +1525,6 @@ double readLevelUltrasonic()
   Serial.print(distance);
   Serial.println(" cm");
 
-  // Filters
-  if (lastUSReading >= 0 && abs(distance - lastUSReading) > maxReadingJump) 
-  {
-    Serial.println("Rejected US reading: Sudden jump");
-    return -1.0;
-  }
-  if (distance >= 50 || distance <= 10) 
-  {
-    Serial.println("Rejected US reading: Unrealistic value");
-    return -1.0;
-  }
-
-  // Succesful reading -> Saving as last measurement
-  lastUSReading = distance;
-
   return distance;
 }
 
@@ -1599,28 +1596,25 @@ bool readFloatSensor()
   return (highCount > debounceSamples / 2);
 }
 
-double getWaterLevel(int numAvg)
+double getWaterLevel(double us, double ir)
 {
-  const double minValid = 5.0;   // cm
-  const double maxValid = 50.0;  // cm
+  const double minValid = 5.0;   // minimum water level 
+  const double maxValid = 45.0;  // maximum water level
   const double maxDiff = 5.0;    // max allowed diff between sensors
-  const double maxJump = 10.0;   // max allowed jump from previous reading
-
-  static double prevLevel = -1.0;
-
-  double ir = readLevelInfrared();
-  double us = readLevelUltrasonic();
-
-  bool irValid = (ir >= minValid && ir <= maxValid);
-  bool usValid = (us >= minValid && us <= maxValid);
+  const double maxJump = 5.0;   // max allowed jump from previous reading
 
   double level = -1.0;
 
+  // Check reading validity
+  bool irValid = (ir >= minValid && ir <= maxValid);
+  bool usValid = (us >= minValid && us <= maxValid);
+
+  // Check sensor readings
   if (irValid && usValid) {
     if (abs(ir - us) <= maxDiff) {
       level = (ir + us) / 2.0;
     } else {
-      Serial.println("Sensor mismatch! Using ultrasonic as primary.");
+      consoleLog("Sensor reading mismatch! Using ultrasonic as primary.", 2);
       level = us;
     }
   } else if (usValid) {
@@ -1628,18 +1622,24 @@ double getWaterLevel(int numAvg)
   } else if (irValid) {
     level = ir;
   } else {
-    Serial.println("Both sensor readings are invalid.");
+    consoleLog("Both sensor readings are invalid.", 2);
     return prevLevel >= 0 ? prevLevel : -1.0;
   }
 
   // Compare with previous level
   if (prevLevel >= 0 && abs(level - prevLevel) > maxJump) {
-    Serial.println("Sudden jump detected, using previous level instead.");
+    consoleLog("Sudden jump detected! Using previous level instead.", 2);
     return prevLevel;
   }
 
+  // Smooth level readings
+  level = smoothValue(smoothedLevel, level, alphaLevel);
+
+  // Save reading for future reference
   prevLevel = level;
-  return level;
+
+  // Return water level reading
+  return containerHeight - level;
 }
 
 void scanI2CDevices() 
