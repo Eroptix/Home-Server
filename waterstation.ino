@@ -217,6 +217,8 @@ String pres_calib_state_topic =             String("home/") + deviceName + Strin
 String pres_calib_command_topic =           String("home/") + deviceName + String("/parameters/presCalib/command");
 String hum_calib_state_topic =              String("home/") + deviceName + String("/parameters/humCalib/state");
 String hum_calib_command_topic =            String("home/") + deviceName + String("/parameters/humCalib/command");
+String alpha_state_topic =                  String("home/") + deviceName + String("/parameters/alpha/state");
+String alpha_command_topic =                String("home/") + deviceName + String("/parameters/alpha/command");
 
 // Switches
 String pump1_state_topic =                  String("home/") + deviceName + String("/pumps/pump1/state");
@@ -1005,6 +1007,8 @@ void sendDiscoveries()
   publishMQTTNumberDiscovery("Pressure Calibration", pres_calib_command_topic, pres_calib_state_topic, -100, 100, 1.0, "mdi:gauge", "hPa", true);
   delay(100);
   publishMQTTNumberDiscovery("Humidity Calibration", hum_calib_command_topic, hum_calib_state_topic, -100, 100, 1.0, "mdi:water-percent", "%", true);
+  delay(100);
+  publishMQTTNumberDiscovery("Alpha", alpha_command_topic, alpha_state_topic, 0, 1, 0.1, "mdi:alpha", "", true);
   delay(100);
 
   // Switches
