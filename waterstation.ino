@@ -135,6 +135,7 @@ long wifiStrength;                                  // WiFi strength value
 // Water station parameters
 double containerHeight = 42.0;
 double waterLevel = -1.0;
+double prevLevel = -1.0;
 
 // Calibration constants
 double calibUsA = 0;
