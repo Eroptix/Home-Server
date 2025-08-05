@@ -25,7 +25,7 @@ log() {
 FOLDERS=(
   adguard bitwarden homarr nginx bazarr jellyfin prowlarr python_venv
   qbittorrent sonarr radarr lidarr homepage pigallery homeassistant
-  piwol stash whisparr mqtt-server node-red immich piper zigbee2mqtt
+  piwol stash whisparr mqtt-server node-red piper zigbee2mqtt
 )
 
 log "========== Starting backup at $TIMESTAMP =========="
