@@ -1,8 +1,8 @@
 #!/bin/bash
 
 # === Configuration ===
-BACKUP_DIR="/mnt/ssd/backups"
-LOG_DIR="/mnt/ssd/backups"
+BACKUP_DIR="/mnt/backup/backups"
+LOG_DIR="/mnt/backup/backups"
 DEST_REMOTE="gdrive:my_backups"
 TIMESTAMP=$(date +"%Y-%m-%d")
 DAYS_TO_KEEP=7
@@ -10,7 +10,7 @@ SW_VERSION="1.1.1"
 
 # === Upload to Google Drive ===
 RCLONE_BIN="/usr/bin/rclone"
-RCLONE_LOG="/mnt/ssd/backups/rclone_upload.log"
+RCLONE_LOG="/mnt/backup/backups/rclone_upload.log"
 
 # Log setup
 LOG_DIR="${BACKUP_DIR}/logs"
