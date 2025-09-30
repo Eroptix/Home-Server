@@ -47,7 +47,7 @@ client = None
 
 # Device information
 DEVICE_NAME = "homeserver"
-CURRENT_SW_VERSION = "1.2.3"
+CURRENT_SW_VERSION = "1.2.4"
 DEVICE_MODEL = "Home PC Server"
 DEVICE_MANUFACTURER = "BTM Engineering"
 
@@ -229,8 +229,9 @@ def collect_system_status():
     status["cpu_load_1min"] = round(load1, 2)
     status["cpu_load_5min"] = round(load5, 2)
     status["cpu_load_15min"] = round(load15, 2)
-    temp = get_cpu_temperature()
-    status["cpu_temp"] = temp if temp is not None else "unavailable"
+
+    client.publish(STATUS_CPU_TEMP_TOPIC, get_cpu_temperature(), retain=False)
+
 
     # Memory
     mem = psutil.virtual_memory()
@@ -537,6 +538,8 @@ def setup_home_assistant_entities():
     publish_mqtt_sensor_discovery("IP Address", STATUS_IP_TOPIC, icon="mdi:bluetooth", entity_category="diagnostic")
     publish_mqtt_sensor_discovery("Host Name", STATUS_HOST_TOPIC, icon="mdi:bluetooth", entity_category="diagnostic")
     publish_mqtt_sensor_discovery("Uptime", STATUS_UPTIME_TOPIC, icon="mdi:bluetooth", entity_category="diagnostic")
+    publish_mqtt_sensor_discovery("Platform", STATUS_OS_TOPIC, icon="mdi:bluetooth", entity_category="diagnostic")
+    publish_mqtt_sensor_discovery("CPU Temp", STATUS_CPU_TEMP_TOPIC, icon="mdi:bluetooth", entity_category="diagnostic")
 
     publish_mqtt_sensor_discovery("Secure Free", STATUS_SECURE_STORAGE_FREE_TOPIC, icon="mdi:harddisk-plus", entity_category="diagnostic", unit_of_measurement="GB", display_precision=0)
     publish_mqtt_sensor_discovery("Secure Used", STATUS_SECURE_STORAGE_USED_TOPIC, icon="mdi:harddisk-remove", entity_category="diagnostic", unit_of_measurement="GB", display_precision=0)
