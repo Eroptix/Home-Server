@@ -68,6 +68,8 @@ LOG_INFO_TOPIC =                            f"home/{DEVICE_NAME}/log/info"
 STATUS_UPTIME_TOPIC =                       f"home/{DEVICE_NAME}/status/uptime"
 STATUS_VERSION_TOPIC =                      f"home/{DEVICE_NAME}/status/version"
 STATUS_IP_TOPIC =                           f"home/{DEVICE_NAME}/status/ip"
+STATUS_HOST_TOPIC =                         f"home/{DEVICE_NAME}/status/host"
+STATUS_OS_TOPIC =                           f"home/{DEVICE_NAME}/status/os"
 STATUS_CPU_TEMP_TOPIC =                     f"home/{DEVICE_NAME}/status/cpu/temperature"
 STATUS_LOAD_1MIN_TOPIC =                    f"home/{DEVICE_NAME}/status/cpu/load/1min"
 STATUS_LOAD_5MIN_TOPIC =                    f"home/{DEVICE_NAME}/status/cpu/load/5min"
@@ -236,21 +238,11 @@ def collect_system_status():
     status["memory_used_mb"] = round(mem.used / 1024 / 1024, 1)
     status["memory_percent"] = mem.percent
 
-    # Disk
-    disk = shutil.disk_usage("/")
-    status["disk_total_gb"] = round(disk.total / 1024 / 1024 / 1024, 1)
-    status["disk_used_gb"] = round(disk.used / 1024 / 1024 / 1024, 1)
-    status["disk_free_gb"] = round(disk.free / 1024 / 1024 / 1024, 1)
-    status["disk_percent"] = round(disk.used / disk.total * 100, 1)
-
-    # External Drives
-    status["external_drives"] = get_mounted_drives_info()
-
     # Network / System Info
-    status["ip_address"] = get_ip_address()
-    status["uptime"] = get_uptime()
-    status["os"] = platform.platform()
-    status["hostname"] = socket.gethostname()
+    client.publish(STATUS_IP_TOPIC, get_ip_address(), retain=False)
+    client.publish(STATUS_UPTIME_TOPIC, get_uptime(), retain=False)
+    client.publish(STATUS_OS_TOPIC, platform.platform(), retain=False)
+    client.publish(STATUS_HOST_TOPIC, socket.gethostname(), retain=False)
 
     return status
 
@@ -493,7 +485,7 @@ def publish_mqtt_climate_discovery(name, current_temp_topic, temp_state_topic,
     log(f"Published climate discovery: {name}")
 
 
-def publish_mqtt_availability_binary_sensor_discovery(name, state_topic, icon="", device_class="",
+def publish_mqtt_availability_binary_sensor_discovery(name, state_topic, icon="", device_class="connectivity",
                                          entity_category=""):
     """Create availability binary sensor discovery payload"""
     unique_id = f"{DEVICE_NAME}-{remove_spaces(name)}"
@@ -542,6 +534,9 @@ def setup_home_assistant_entities():
     publish_mqtt_sensor_discovery("Backup Status", BACKUP_STATUS_TOPIC, icon="mdi:backup-restore", entity_category="diagnostic")
     publish_mqtt_sensor_discovery("Software Version", STATUS_VERSION_TOPIC, icon="mdi:text-box-outline", entity_category="diagnostic")
     publish_mqtt_sensor_discovery("Bluetooth Status", BLUETOOTH_STATUS_TOPIC, icon="mdi:bluetooth", entity_category="diagnostic")
+    publish_mqtt_sensor_discovery("IP Address", STATUS_IP_TOPIC, icon="mdi:bluetooth", entity_category="diagnostic")
+    publish_mqtt_sensor_discovery("Host Name", STATUS_HOST_TOPIC, icon="mdi:bluetooth", entity_category="diagnostic")
+    publish_mqtt_sensor_discovery("Uptime", STATUS_UPTIME_TOPIC, icon="mdi:bluetooth", entity_category="diagnostic")
 
     publish_mqtt_sensor_discovery("Secure Free", STATUS_SECURE_STORAGE_FREE_TOPIC, icon="mdi:harddisk-plus", entity_category="diagnostic", unit_of_measurement="GB", display_precision=0)
     publish_mqtt_sensor_discovery("Secure Used", STATUS_SECURE_STORAGE_USED_TOPIC, icon="mdi:harddisk-remove", entity_category="diagnostic", unit_of_measurement="GB", display_precision=0)
@@ -867,6 +862,9 @@ def status_monitor_loop(interval=30):
 
         # Publish availability
         client.publish(AVAILABILITY_TOPIC, "connected", retain=True)
+
+        # Publish system status
+        collect_system_status()
 
         # Publish drive status
         publish_secure_drive_status()
