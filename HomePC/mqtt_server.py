@@ -47,7 +47,7 @@ client = None
 
 # Device information
 DEVICE_NAME = "homeserver"
-CURRENT_SW_VERSION = "1.2.2"
+CURRENT_SW_VERSION = "1.2.3"
 DEVICE_MODEL = "Home PC Server"
 DEVICE_MANUFACTURER = "BTM Engineering"
 
@@ -832,12 +832,21 @@ def status_monitor_loop(interval=30):
     last_status = None
     global client
     while True:
+
+        # Publish availability
+        client.publish(AVAILABILITY_TOPIC, "connected", retain=True)
+
+        # Publish drive status
         publish_secure_drive_status()
         publish_media_drive_status()
+
+        # Check bluetooth status
         status = get_bt_connection_status()
         if status != last_status:
             client.publish(BLUETOOTH_STATUS_TOPIC, status, retain=True)
             last_status = status
+
+        # Initiate sleep    
         time.sleep(interval)
 
 
