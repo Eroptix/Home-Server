@@ -493,6 +493,38 @@ def publish_mqtt_climate_discovery(name, current_temp_topic, temp_state_topic,
     log(f"Published climate discovery: {name}")
 
 
+def publish_mqtt_availability_binary_sensor_discovery(name, state_topic, icon="", device_class="",
+                                         entity_category=""):
+    """Create availability binary sensor discovery payload"""
+    unique_id = f"{DEVICE_NAME}-{remove_spaces(name)}"
+    object_id = f"{DEVICE_NAME}_{remove_spaces(name)}"
+    config_topic = f"homeassistant/binary_sensor/{unique_id}/config"
+
+    payload = {
+        "name": name,
+        "unique_id": unique_id,
+        "object_id": object_id,
+        "state_topic": state_topic,
+        "payload_on": "connected",
+        "payload_off": "connection lost",
+        "availability_topic": AVAILABILITY_TOPIC,
+        "device": {
+            "identifiers": [DEVICE_NAME],
+            "name": DEVICE_NAME,
+            "model": DEVICE_MODEL,
+            "manufacturer": DEVICE_MANUFACTURER
+        }
+    }
+
+    # Add optional parameters
+    if icon: payload["icon"] = icon
+    if device_class: payload["device_class"] = device_class
+    if entity_category: payload["entity_category"] = entity_category
+
+    client.publish(config_topic, json.dumps(payload), retain=True)
+    log(f"Published binary sensor discovery: {name}")
+
+
 def setup_home_assistant_entities():
     """Setup all Home Assistant entities via MQTT discovery"""
     log("Setting up Home Assistant entities")
@@ -522,7 +554,7 @@ def setup_home_assistant_entities():
     publish_mqtt_sensor_discovery("Media Percentage", STATUS_MEDIA_STORAGE_PERCENTAGE_TOPIC, icon="mdi:percent-outline", entity_category="diagnostic", unit_of_measurement="%", display_precision=0)
 
     # Binary Sensors
-    publish_mqtt_binary_sensor_discovery("MQTT Server Status", AVAILABILITY_TOPIC, icon="mdi:server", device_class="connectivity")
+    publish_mqtt_availability_binary_sensor_discovery("MQTT Server Status", AVAILABILITY_TOPIC, icon="mdi:server", device_class="connectivity")
 
     log("Home Assistant entities setup complete")
 
