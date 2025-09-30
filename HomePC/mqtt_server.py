@@ -47,7 +47,7 @@ client = None
 
 # Device information
 DEVICE_NAME = "homeserver"
-CURRENT_SW_VERSION = "1.2.1"
+CURRENT_SW_VERSION = "1.2.2"
 DEVICE_MODEL = "Home PC Server"
 DEVICE_MANUFACTURER = "BTM Engineering"
 
@@ -202,6 +202,18 @@ def publish_secure_drive_status(path="/mnt/secure"):
         client.publish(STATUS_SECURE_STORAGE_USED_TOPIC, round(usage.used / (1024**3), 1), retain=False)
         client.publish(STATUS_SECURE_STORAGE_FREE_TOPIC, round(usage.free / (1024**3), 1), retain=False)
         client.publish(STATUS_SECURE_STORAGE_PERCENTAGE_TOPIC, usage.percent, retain=False)
+    except Exception as e:
+        client.publish(LOG_ERROR_TOPIC, str(e), retain=False)
+
+
+def publish_media_drive_status(path="/mnt/media"):
+    global client
+    try:
+        usage = psutil.disk_usage(path)
+        client.publish(STATUS_MEDIA_STORAGE_TOTAL_TOPIC, round(usage.total / (1024**3), 1), retain=False)
+        client.publish(STATUS_MEDIA_STORAGE_USED_TOPIC, round(usage.used / (1024**3), 1), retain=False)
+        client.publish(STATUS_MEDIA_STORAGE_FREE_TOPIC, round(usage.free / (1024**3), 1), retain=False)
+        client.publish(STATUS_MEDIA_STORAGE_PERCENTAGE_TOPIC, usage.percent, retain=False)
     except Exception as e:
         client.publish(LOG_ERROR_TOPIC, str(e), retain=False)
 
@@ -498,10 +510,16 @@ def setup_home_assistant_entities():
     publish_mqtt_sensor_discovery("Backup Status", BACKUP_STATUS_TOPIC, icon="mdi:backup-restore", entity_category="diagnostic")
     publish_mqtt_sensor_discovery("Software Version", STATUS_VERSION_TOPIC, icon="mdi:text-box-outline", entity_category="diagnostic")
     publish_mqtt_sensor_discovery("Bluetooth Status", BLUETOOTH_STATUS_TOPIC, icon="mdi:bluetooth", entity_category="diagnostic")
+
     publish_mqtt_sensor_discovery("Secure Free", STATUS_SECURE_STORAGE_FREE_TOPIC, icon="mdi:harddisk-plus", entity_category="diagnostic", unit_of_measurement="GB", display_precision=0)
     publish_mqtt_sensor_discovery("Secure Used", STATUS_SECURE_STORAGE_USED_TOPIC, icon="mdi:harddisk-remove", entity_category="diagnostic", unit_of_measurement="GB", display_precision=0)
     publish_mqtt_sensor_discovery("Secure Total", STATUS_SECURE_STORAGE_TOTAL_TOPIC, icon="mdi:harddisk", entity_category="diagnostic", unit_of_measurement="GB", display_precision=0)
     publish_mqtt_sensor_discovery("Secure Percentage", STATUS_SECURE_STORAGE_PERCENTAGE_TOPIC, icon="mdi:percent-outline", entity_category="diagnostic", unit_of_measurement="%", display_precision=0)
+
+    publish_mqtt_sensor_discovery("Media Free", STATUS_MEDIA_STORAGE_FREE_TOPIC, icon="mdi:harddisk-plus", entity_category="diagnostic", unit_of_measurement="GB", display_precision=0)
+    publish_mqtt_sensor_discovery("Media Used", STATUS_MEDIA_STORAGE_USED_TOPIC, icon="mdi:harddisk-remove", entity_category="diagnostic", unit_of_measurement="GB", display_precision=0)
+    publish_mqtt_sensor_discovery("Media Total", STATUS_MEDIA_STORAGE_TOTAL_TOPIC, icon="mdi:harddisk", entity_category="diagnostic", unit_of_measurement="GB", display_precision=0)
+    publish_mqtt_sensor_discovery("Media Percentage", STATUS_MEDIA_STORAGE_PERCENTAGE_TOPIC, icon="mdi:percent-outline", entity_category="diagnostic", unit_of_measurement="%", display_precision=0)
 
     # Binary Sensors
     publish_mqtt_binary_sensor_discovery("MQTT Server Status", AVAILABILITY_TOPIC, icon="mdi:server", device_class="connectivity")
@@ -815,6 +833,7 @@ def status_monitor_loop(interval=30):
     global client
     while True:
         publish_secure_drive_status()
+        publish_media_drive_status()
         status = get_bt_connection_status()
         if status != last_status:
             client.publish(BLUETOOTH_STATUS_TOPIC, status, retain=True)
