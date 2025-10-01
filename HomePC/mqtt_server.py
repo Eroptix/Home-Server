@@ -47,7 +47,7 @@ client = None
 
 # Device information
 DEVICE_NAME = "homeserver"
-CURRENT_SW_VERSION = "1.2.4"
+CURRENT_SW_VERSION = "1.2.5"
 DEVICE_MODEL = "Home PC Server"
 DEVICE_MANUFACTURER = "BTM Engineering"
 
@@ -541,16 +541,21 @@ def setup_home_assistant_entities():
     publish_mqtt_sensor_discovery("Platform", STATUS_OS_TOPIC, icon="mdi:bluetooth", entity_category="diagnostic")
     publish_mqtt_sensor_discovery("CPU Temp", STATUS_CPU_TEMP_TOPIC, icon="mdi:bluetooth", entity_category="diagnostic")
 
-    publish_mqtt_sensor_discovery("Secure Free", STATUS_SECURE_STORAGE_FREE_TOPIC, icon="mdi:harddisk-plus", entity_category="diagnostic", unit_of_measurement="GB", display_precision=0)
+    publish_mqtt_sensor_discovery("Secure Free", STATUS_SECURE_STORAGE_FREE_TOPIC, icon="mdi:harddisk-plus", unit_of_measurement="GB", display_precision=0)
     publish_mqtt_sensor_discovery("Secure Used", STATUS_SECURE_STORAGE_USED_TOPIC, icon="mdi:harddisk-remove", entity_category="diagnostic", unit_of_measurement="GB", display_precision=0)
     publish_mqtt_sensor_discovery("Secure Total", STATUS_SECURE_STORAGE_TOTAL_TOPIC, icon="mdi:harddisk", entity_category="diagnostic", unit_of_measurement="GB", display_precision=0)
     publish_mqtt_sensor_discovery("Secure Percentage", STATUS_SECURE_STORAGE_PERCENTAGE_TOPIC, icon="mdi:percent-outline", entity_category="diagnostic", unit_of_measurement="%", display_precision=0)
 
-    publish_mqtt_sensor_discovery("Media Free", STATUS_MEDIA_STORAGE_FREE_TOPIC, icon="mdi:harddisk-plus", entity_category="diagnostic", unit_of_measurement="GB", display_precision=0)
+    publish_mqtt_sensor_discovery("Media Free", STATUS_MEDIA_STORAGE_FREE_TOPIC, icon="mdi:harddisk-plus", unit_of_measurement="GB", display_precision=0)
     publish_mqtt_sensor_discovery("Media Used", STATUS_MEDIA_STORAGE_USED_TOPIC, icon="mdi:harddisk-remove", entity_category="diagnostic", unit_of_measurement="GB", display_precision=0)
     publish_mqtt_sensor_discovery("Media Total", STATUS_MEDIA_STORAGE_TOTAL_TOPIC, icon="mdi:harddisk", entity_category="diagnostic", unit_of_measurement="GB", display_precision=0)
     publish_mqtt_sensor_discovery("Media Percentage", STATUS_MEDIA_STORAGE_PERCENTAGE_TOPIC, icon="mdi:percent-outline", entity_category="diagnostic", unit_of_measurement="%", display_precision=0)
 
+    publish_mqtt_sensor_discovery("Backup Free", STATUS_BACKUP_STORAGE_FREE_TOPIC, icon="mdi:harddisk-plus", unit_of_measurement="GB", display_precision=0)
+    publish_mqtt_sensor_discovery("Backup Used", STATUS_BACKUP_STORAGE_USED_TOPIC, icon="mdi:harddisk-remove", entity_category="diagnostic", unit_of_measurement="GB", display_precision=0)
+    publish_mqtt_sensor_discovery("Backup Total", STATUS_BACKUP_STORAGE_TOTAL_TOPIC, icon="mdi:harddisk", entity_category="diagnostic", unit_of_measurement="GB", display_precision=0)
+    publish_mqtt_sensor_discovery("Backup Percentage", STATUS_BACKUP_STORAGE_PERCENTAGE_TOPIC, icon="mdi:percent-outline", entity_category="diagnostic", unit_of_measurement="%", display_precision=0)
+    
     # Binary Sensors
     publish_mqtt_availability_binary_sensor_discovery("MQTT Server Status", AVAILABILITY_TOPIC, icon="mdi:server", device_class="connectivity")
 
