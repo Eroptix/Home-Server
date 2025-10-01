@@ -219,6 +219,16 @@ def publish_media_drive_status(path="/mnt/media"):
     except Exception as e:
         client.publish(LOG_ERROR_TOPIC, str(e), retain=False)
 
+def publish_backup_drive_status(path="/mnt/backup"):
+    global client
+    try:
+        usage = psutil.disk_usage(path)
+        client.publish(STATUS_BACKUP_STORAGE_TOTAL_TOPIC, round(usage.total / (1024**3), 1), retain=False)
+        client.publish(STATUS_BACKUP_STORAGE_USED_TOPIC, round(usage.used / (1024**3), 1), retain=False)
+        client.publish(STATUS_BACKUP_STORAGE_FREE_TOPIC, round(usage.free / (1024**3), 1), retain=False)
+        client.publish(STATUS_BACKUP_STORAGE_PERCENTAGE_TOPIC, usage.percent, retain=False)
+    except Exception as e:
+        client.publish(LOG_ERROR_TOPIC, str(e), retain=False)
 
 def collect_system_status():
     """Return a dictionary with various system status parameters"""
@@ -877,6 +887,7 @@ def status_monitor_loop(interval=30):
         # Publish drive status
         publish_secure_drive_status()
         publish_media_drive_status()
+        publish_backup_drive_status()
 
         # Check bluetooth status
         status = get_bt_connection_status()
