@@ -47,7 +47,7 @@ client = None
 
 # Device information
 DEVICE_NAME = "homeserver"
-CURRENT_SW_VERSION = "1.2.5"
+CURRENT_SW_VERSION = "1.2.6"
 DEVICE_MODEL = "Home PC Server"
 DEVICE_MANUFACTURER = "BTM Engineering"
 
@@ -95,6 +95,11 @@ STATUS_INTERNAL_STORAGE_TOTAL_TOPIC =       f"home/{DEVICE_NAME}/status/storage/
 STATUS_INTERNAL_STORAGE_USED_TOPIC =        f"home/{DEVICE_NAME}/status/storage/internal/used"
 STATUS_INTERNAL_STORAGE_FREE_TOPIC =        f"home/{DEVICE_NAME}/status/storage/internal/free"
 STATUS_INTERNAL_STORAGE_PERCENTAGE_TOPIC =  f"home/{DEVICE_NAME}/status/storage/internal/percentage"
+
+STATUS_ROOT_STORAGE_TOTAL_TOPIC =           f"home/{DEVICE_NAME}/status/storage/root/total"
+STATUS_ROOT_STORAGE_USED_TOPIC =            f"home/{DEVICE_NAME}/status/storage/root/used"
+STATUS_ROOT_STORAGE_FREE_TOPIC =            f"home/{DEVICE_NAME}/status/storage/root/free"
+STATUS_ROOT_STORAGE_PERCENTAGE_TOPIC =      f"home/{DEVICE_NAME}/status/storage/root/percentage"
 
 # Backup script
 BACKUP_SCRIPT_URL = "https://raw.githubusercontent.com/Eroptix/Home-Server/refs/heads/main/HomePC/backup_script.sh"
@@ -227,6 +232,17 @@ def publish_backup_drive_status(path="/mnt/backup"):
         client.publish(STATUS_BACKUP_STORAGE_USED_TOPIC, round(usage.used / (1024**3), 1), retain=False)
         client.publish(STATUS_BACKUP_STORAGE_FREE_TOPIC, round(usage.free / (1024**3), 1), retain=False)
         client.publish(STATUS_BACKUP_STORAGE_PERCENTAGE_TOPIC, usage.percent, retain=False)
+    except Exception as e:
+        client.publish(LOG_ERROR_TOPIC, str(e), retain=False)
+
+def publish_root_drive_status(path="/"):
+    global client
+    try:
+        usage = psutil.disk_usage(path)
+        client.publish(STATUS_ROOT_STORAGE_TOTAL_TOPIC, round(usage.total / (1024**3), 1), retain=False)
+        client.publish(STATUS_ROOT_STORAGE_USED_TOPIC, round(usage.used / (1024**3), 1), retain=False)
+        client.publish(STATUS_ROOT_STORAGE_FREE_TOPIC, round(usage.free / (1024**3), 1), retain=False)
+        client.publish(STATUS_ROOT_STORAGE_PERCENTAGE_TOPIC, usage.percent, retain=False)
     except Exception as e:
         client.publish(LOG_ERROR_TOPIC, str(e), retain=False)
 
@@ -566,6 +582,11 @@ def setup_home_assistant_entities():
     publish_mqtt_sensor_discovery("Backup Total", STATUS_BACKUP_STORAGE_TOTAL_TOPIC, icon="mdi:harddisk", entity_category="diagnostic", unit_of_measurement="GB", display_precision=0)
     publish_mqtt_sensor_discovery("Backup Percentage", STATUS_BACKUP_STORAGE_PERCENTAGE_TOPIC, icon="mdi:percent-outline", entity_category="diagnostic", unit_of_measurement="%", display_precision=0)
     
+    publish_mqtt_sensor_discovery("Root Free", STATUS_ROOT_STORAGE_FREE_TOPIC, icon="mdi:harddisk-plus", unit_of_measurement="GB", display_precision=0)
+    publish_mqtt_sensor_discovery("Root Used", STATUS_ROOT_STORAGE_USED_TOPIC, icon="mdi:harddisk-remove", entity_category="diagnostic", unit_of_measurement="GB", display_precision=0)
+    publish_mqtt_sensor_discovery("Root Total", STATUS_ROOT_STORAGE_TOTAL_TOPIC, icon="mdi:harddisk", entity_category="diagnostic", unit_of_measurement="GB", display_precision=0)
+    publish_mqtt_sensor_discovery("Root Percentage", STATUS_ROOT_STORAGE_PERCENTAGE_TOPIC, icon="mdi:percent-outline", entity_category="diagnostic", unit_of_measurement="%", display_precision=0)
+
     # Binary Sensors
     publish_mqtt_availability_binary_sensor_discovery("MQTT Server Status", AVAILABILITY_TOPIC, icon="mdi:server", device_class="connectivity")
 
@@ -888,6 +909,7 @@ def status_monitor_loop(interval=30):
         publish_secure_drive_status()
         publish_media_drive_status()
         publish_backup_drive_status()
+        publish_root_drive_status()
 
         # Check bluetooth status
         status = get_bt_connection_status()
