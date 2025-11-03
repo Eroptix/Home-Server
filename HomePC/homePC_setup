@@ -46,68 +46,6 @@ sudo docker run
 
 # Username: admin
 # Password: iW^&bd8GN9qAe9o
-	
-# --------------------------------------------------------
-# 	Thingsboard Install
-# -------------------------------------------------------- 
-
-# Create Thingsboard container
-docker run\
-	--name thingsboard \
-	--restart always \
-	-p 8080:9090 \
-	-p 1883:1883 \
-	-p 7070:7070 \
-	-p 5683-5688:5683-5688/udp \
-	-e TB_QUEUE_TYPE=in-memory \
-	-v /home/pi/thingsboard/data:/data \
-	-v /home/pi/thingsboard/log:/var/log/thingsboard \
-	-d thingsboard/tb-postgres
-
-
-# Change permissions of the volumes for editing
-sudo chmod -R 755 /mnt/ssd/immich/
-sudo chown -R 1000 /mnt/ssd/immich/
-
-# Set default permission for Thingsboard: rwx------ 799
-sudo chmod -R 700 /home/pi/thingsboard
-sudo chown -R 1000 /home/pi/thingsboard
-
-sudo chown -R botamas:botamas /home/pi/thingsboard/data /home/pi/thingsboard/log
-
-# Username: tenant@thingsboard.org
-# Password: tenant
-
-# Setup Thingsboard API
-http://192.168.0.241:8080/swagger-ui.html
-
-# Set token expiry time max in sysadmin account settings
-
-# Get token 
-curl -X POST --header 'Content-Type: application/json' --header 'Accept: application/json' -d '{"username":"tenant@thingsboard.org", "password":"tenant"}' 'http://192.168.0.241:8080/api/auth/login'
-# Token: eyJhbGciOiJIUzUxMiJ9.eyJzdWIiOiJ0ZW5hbnRAdGhpbmdzYm9hcmQub3JnIiwidXNlcklkIjoiOGI5ZmI0NzAtYTFlYi0xMWVlLWJjYjMtOTViODJiNzM4YjY0Iiwic2NvcGVzIjpbIlRFTkFOVF9BRE1JTiJdLCJzZXNzaW9uSWQiOiJjMjJmNjc4ZS01OTkxLTQ3YjUtYTNkNy0yMTI3YzExYmUyMDciLCJpc3MiOiJ0aGluZ3Nib2FyZC5pbyIsImlhdCI6MTcwNDgzMjQ2MiwiZXhwIjoyNjA0ODMyNDYyLCJlbmFibGVkIjp0cnVlLCJpc1B1YmxpYyI6ZmFsc2UsInRlbmFudElkIjoiOGIxNTAwYTAtYTFlYi0xMWVlLWJjYjMtOTViODJiNzM4YjY0IiwiY3VzdG9tZXJJZCI6IjEzODE0MDAwLTFkZDItMTFiMi04MDgwLTgwODA4MDgwODA4MCJ9.b_5LqcEs5h8C_6YXeGlrRVopq2_In4wyMUU1F8hpjRT8WhMIuH5pVIMElLa77ORSew5L1OYmQa_hVivuwYE58Q"
-
-# Check HTTP API
-curl -v -X GET http://192.168.0.241:8080/api/plugins/telemetry/DEVICE/bb88e600-a23d-11ee-b70e-cff9d776d382/values/attributes?keys=tempGoal \
---header "Content-Type:application/json" \
---header "X-Authorization: Bearer eyJhbGciOiJIUzUxMiJ9.eyJzdWIiOiJ0ZW5hbnRAdGhpbmdzYm9hcmQub3JnIiwidXNlcklkIjoiOGI5ZmI0NzAtYTFlYi0xMWVlLWJjYjMtOTViODJiNzM4YjY0Iiwic2NvcGVzIjpbIlRFTkFOVF9BRE1JTiJdLCJzZXNzaW9uSWQiOiJjMjJmNjc4ZS01OTkxLTQ3YjUtYTNkNy0yMTI3YzExYmUyMDciLCJpc3MiOiJ0aGluZ3Nib2FyZC5pbyIsImlhdCI6MTcwNDgzMjQ2MiwiZXhwIjoyNjA0ODMyNDYyLCJlbmFibGVkIjp0cnVlLCJpc1B1YmxpYyI6ZmFsc2UsInRlbmFudElkIjoiOGIxNTAwYTAtYTFlYi0xMWVlLWJjYjMtOTViODJiNzM4YjY0IiwiY3VzdG9tZXJJZCI6IjEzODE0MDAwLTFkZDItMTFiMi04MDgwLTgwODA4MDgwODA4MCJ9.b_5LqcEs5h8C_6YXeGlrRVopq2_In4wyMUU1F8hpjRT8WhMIuH5pVIMElLa77ORSew5L1OYmQa_hVivuwYE58Q"
-
-
-curl -v -X GET http://192.168.0.241:1880/api/telemetry/test
-
-# --------------------------------------------------------
-# 	HomePage Install
-# -------------------------------------------------------- 
-docker run --name homepage \
-  -e PUID=1000 \
-  -e PGID=1000 \
-  -p 3600:3600 \
-  -v /home/pi/homepage/config:/app/config \
-  -v /home/pi/homepage/icons:/app/icons \
-  -v /home/pi/homepage/images:/app/images \
-  -v /var/run/docker.sock:/var/run/docker.sock:ro \
-  --restart unless-stopped \
-  ghcr.io/gethomepage/homepage:latest
   
 # --------------------------------------------------------
 # 	Home Assistant Install
@@ -526,20 +464,6 @@ docker run --rm \
     containrrr/watchtower \
     --run-once \
     homeassistant
-    
-# --------------------------------------------------------
-# 	PiGallery Install
-# --------------------------------------------------------     
-docker run -d --name pigallery --restart unless-stopped\
-   -p 5680:5680 \
-   -e NODE_ENV=production \
-   -v /home/pi/pigallery/config:/app/data/config \
-   -v /home/pi/pigallery/db:/app/data/db \
-   -v /mnt/ssd/birdfeeder/images:/app/data/images \
-   -v /home/pi/pigallery/config:/app/data/tmp \
-   bpatrik/pigallery2:latest
-   
-# Change listening port to 5680 in config file
 
 # --------------------------------------------------------
 # 	Mosquitto MQTT Install
