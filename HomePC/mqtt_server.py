@@ -224,6 +224,7 @@ def publish_media_drive_status(path="/mnt/media"):
     except Exception as e:
         client.publish(LOG_ERROR_TOPIC, str(e), retain=False)
 
+
 def publish_backup_drive_status(path="/mnt/backup"):
     global client
     try:
@@ -235,6 +236,7 @@ def publish_backup_drive_status(path="/mnt/backup"):
     except Exception as e:
         client.publish(LOG_ERROR_TOPIC, str(e), retain=False)
 
+
 def publish_root_drive_status(path="/"):
     global client
     try:
@@ -245,6 +247,7 @@ def publish_root_drive_status(path="/"):
         client.publish(STATUS_ROOT_STORAGE_PERCENTAGE_TOPIC, usage.percent, retain=False)
     except Exception as e:
         client.publish(LOG_ERROR_TOPIC, str(e), retain=False)
+
 
 def collect_system_status():
     """Return a dictionary with various system status parameters"""
@@ -971,12 +974,43 @@ def on_message(client, userdata, msg):
             play_audio(payload, False)
         elif topic == PLAY_ALBUM_TOPIC:
             play_album(payload)
+        elif topic == TAILSCALE_CONTROL_TOPIC:
+            handle_tailscale_control(payload)
         else:
             log(f"Unknown command topic: {topic}", "warning")
 
     except Exception as e:
         log(f"Error processing message: {e}", "error")
 
+
+def handle_tailscale_control(payload):
+    try:
+        data = json.loads(payload)
+        action = data.get("action")
+        target = data.get("target")
+
+        if action != "expose":
+            log(f"Unknown Tailscale action: {action}", "warning")
+            return
+
+        # Stop any running serve config
+        subprocess.run(["sudo", "tailscale", "serve", "--shutdown"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+
+        if target == "bitwarden":
+            subprocess.run(["sudo", "tailscale", "serve", "https", "/", "http://127.0.0.1:4080"], check=True)
+            log("✅ Bitwarden exposed via Tailscale")
+        elif target == "homeassistant":
+            subprocess.run(["sudo", "tailscale", "serve", "https", "/", "http://127.0.0.1:8123"], check=True)
+            log("✅ Home Assistant exposed via Tailscale")
+        else:
+            log(f"⚠️ Unknown target: {target}", "warning")
+
+    except json.JSONDecodeError:
+        log(f"Invalid JSON payload: {payload}", "error")
+    except subprocess.CalledProcessError as e:
+        log(f"Tailscale command failed: {e}", "error")
+    except Exception as e:
+        log(f"Error handling Tailscale control: {e}", "error")
 
 # === MAIN EXECUTION ===
 def main():
