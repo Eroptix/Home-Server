@@ -47,7 +47,7 @@ client = None
 
 # Device information
 DEVICE_NAME = "homeserver"
-CURRENT_SW_VERSION = "1.2.8"
+CURRENT_SW_VERSION = "1.2.9"
 DEVICE_MODEL = "Home PC Server"
 DEVICE_MANUFACTURER = "BTM Engineering"
 
@@ -597,7 +597,7 @@ def setup_home_assistant_entities():
     publish_mqtt_availability_binary_sensor_discovery("MQTT Server Status", AVAILABILITY_TOPIC, icon="mdi:server", device_class="connectivity")
 
     # Select Entities
-    publish_mqtt_select_discovery("Tailscale Exposed Service", TAILSCALE_SELECT_COMMAND_TOPIC, TAILSCALE_SELECT_STATE_TOPIC,["Home Assistant", "Bitwarden"], icon="mdi:cloud-lock")
+    publish_mqtt_select_discovery("Tailscale Exposed Service", TAILSCALE_SELECT_COMMAND_TOPIC, TAILSCALE_SELECT_STATE_TOPIC,["Disabled", "Home Assistant", "Bitwarden"], icon="mdi:cloud-lock")
 
     log("Home Assistant entities setup complete")
 
@@ -1008,6 +1008,11 @@ def handle_tailscale_select(payload):
             subprocess.run(["sudo", "tailscale", "funnel", "--bg", "8123"], check=True)
             client.publish(TAILSCALE_SELECT_STATE_TOPIC, "Home Assistant", retain=True)
             log("Home Assistant exposed via Tailscale")
+
+        elif selection.lower() == "disabled":
+            # Just stop any active Tailscale routes
+            client.publish(TAILSCALE_SELECT_STATE_TOPIC, "Disabled", retain=True)
+            log("All Tailscale funnels/serves stopped")
 
         else:
             log(f"Unknown selection: {selection}", "warning")
