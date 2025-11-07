@@ -1063,6 +1063,7 @@ def main():
         client.connect(MQTT_BROKER, MQTT_PORT, 60)
         client.publish(STATUS_VERSION_TOPIC, CURRENT_SW_VERSION, retain=True)
 
+        # Reset tailscale funnels, and serves
         subprocess.run(["sudo", "tailscale", "serve", "reset"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         subprocess.run(["sudo", "tailscale", "funnel", "off"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         client.publish(TAILSCALE_SELECT_STATE_TOPIC, "Disabled", retain=True)
