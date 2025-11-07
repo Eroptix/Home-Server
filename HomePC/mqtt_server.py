@@ -47,7 +47,7 @@ client = None
 
 # Device information
 DEVICE_NAME = "homeserver"
-CURRENT_SW_VERSION = "1.2.6"
+CURRENT_SW_VERSION = "1.2.7"
 DEVICE_MODEL = "Home PC Server"
 DEVICE_MANUFACTURER = "BTM Engineering"
 
@@ -100,6 +100,9 @@ STATUS_ROOT_STORAGE_TOTAL_TOPIC =           f"home/{DEVICE_NAME}/status/storage/
 STATUS_ROOT_STORAGE_USED_TOPIC =            f"home/{DEVICE_NAME}/status/storage/root/used"
 STATUS_ROOT_STORAGE_FREE_TOPIC =            f"home/{DEVICE_NAME}/status/storage/root/free"
 STATUS_ROOT_STORAGE_PERCENTAGE_TOPIC =      f"home/{DEVICE_NAME}/status/storage/root/percentage"
+
+TAILSCALE_SELECT_COMMAND_TOPIC =            f"home/{DEVICE_NAME}/tailscale/select/set"
+TAILSCALE_SELECT_STATE_TOPIC   =            f"home/{DEVICE_NAME}/tailscale/select/state"
 
 # Backup script
 BACKUP_SCRIPT_URL = "https://raw.githubusercontent.com/Eroptix/Home-Server/refs/heads/main/HomePC/backup_script.sh"
@@ -592,6 +595,9 @@ def setup_home_assistant_entities():
 
     # Binary Sensors
     publish_mqtt_availability_binary_sensor_discovery("MQTT Server Status", AVAILABILITY_TOPIC, icon="mdi:server", device_class="connectivity")
+
+    # Select Entities
+    publish_mqtt_select_discovery("Tailscale Exposed Service", TAILSCALE_SELECT_COMMAND_TOPIC, TAILSCALE_SELECT_STATE_TOPIC,["Home Assistant", "Bitwarden"], icon="mdi:cloud-lock")
 
     log("Home Assistant entities setup complete")
 
