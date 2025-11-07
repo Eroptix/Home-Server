@@ -47,7 +47,7 @@ client = None
 
 # Device information
 DEVICE_NAME = "homeserver"
-CURRENT_SW_VERSION = "1.3.1"
+CURRENT_SW_VERSION = "1.3.2"
 DEVICE_MODEL = "Home PC Server"
 DEVICE_MANUFACTURER = "BTM Engineering"
 
@@ -597,7 +597,7 @@ def setup_home_assistant_entities():
     publish_mqtt_availability_binary_sensor_discovery("MQTT Server Status", AVAILABILITY_TOPIC, icon="mdi:server", device_class="connectivity")
 
     # Select Entities
-    publish_mqtt_select_discovery("Tailscale Exposed Service", TAILSCALE_SELECT_COMMAND_TOPIC, TAILSCALE_SELECT_STATE_TOPIC,["Disabled", "Home Assistant", "Bitwarden", "Portainer", "Jellyseer", "Qbittorrent", "Stash"], icon="mdi:cloud-lock")
+    publish_mqtt_select_discovery("Tailscale Exposed Service", TAILSCALE_SELECT_COMMAND_TOPIC, TAILSCALE_SELECT_STATE_TOPIC,["Disabled", "Home Assistant", "Bitwarden", "Portainer", "Jellyseer", "Qbittorrent", "Stash", "Immich"], icon="mdi:cloud-lock")
 
     log("Home Assistant entities setup complete")
 
@@ -1029,8 +1029,12 @@ def handle_tailscale_select(payload):
             client.publish(TAILSCALE_SELECT_STATE_TOPIC, "Stash", retain=True)
             log("Stash exposed via Tailscale")
 
+        elif selection.lower() == "immich":
+            subprocess.run(["sudo", "tailscale", "funnel", "--bg", "2283"], check=True)
+            client.publish(TAILSCALE_SELECT_STATE_TOPIC, "Immich", retain=True)
+            log("Immich exposed via Tailscale")
+
         elif selection.lower() == "disabled":
-            # Just stop any active Tailscale routes
             client.publish(TAILSCALE_SELECT_STATE_TOPIC, "Disabled", retain=True)
             log("All Tailscale funnels/serves stopped")
 
