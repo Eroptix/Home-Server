@@ -47,7 +47,7 @@ client = None
 
 # Device information
 DEVICE_NAME = "homeserver"
-CURRENT_SW_VERSION = "1.2.7"
+CURRENT_SW_VERSION = "1.2.8"
 DEVICE_MODEL = "Home PC Server"
 DEVICE_MANUFACTURER = "BTM Engineering"
 
@@ -980,8 +980,8 @@ def on_message(client, userdata, msg):
             play_audio(payload, False)
         elif topic == PLAY_ALBUM_TOPIC:
             play_album(payload)
-        elif topic == TAILSCALE_CONTROL_TOPIC:
-            handle_tailscale_control(payload)
+        elif topic == TAILSCALE_SELECT_COMMAND_TOPIC:
+            handle_tailscale_select(payload)
         else:
             log(f"Unknown command topic: {topic}", "warning")
 
@@ -989,34 +989,32 @@ def on_message(client, userdata, msg):
         log(f"Error processing message: {e}", "error")
 
 
-def handle_tailscale_control(payload):
+def handle_tailscale_select(payload):
     try:
-        data = json.loads(payload)
-        action = data.get("action")
-        target = data.get("target")
+        selection = payload.strip()
+        log(f"Tailscale select received: {selection}")
 
-        if action != "expose":
-            log(f"Unknown Tailscale action: {action}", "warning")
-            return
+        # Stop any existing serve config
+        subprocess.run(["sudo", "tailscale", "serve", "reset"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        subprocess.run(["sudo", "tailscale", "funnel", "disable"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
-        # Stop any running serve config
-        subprocess.run(["sudo", "tailscale", "serve", "--shutdown"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        if selection.lower() == "bitwarden":
+            subprocess.run(["sudo", "tailscale", "funnel", "--bg", "127.0.0.1:4080"], check=True)
+            client.publish(TAILSCALE_SELECT_STATE_TOPIC, "Bitwarden", retain=True)
+            log("Bitwarden exposed via Tailscale")
 
-        if target == "bitwarden":
-            subprocess.run(["sudo", "tailscale", "serve", "https", "/", "http://127.0.0.1:4080"], check=True)
-            log("✅ Bitwarden exposed via Tailscale")
-        elif target == "homeassistant":
-            subprocess.run(["sudo", "tailscale", "serve", "https", "/", "http://127.0.0.1:8123"], check=True)
-            log("✅ Home Assistant exposed via Tailscale")
+        elif selection.lower() == "home assistant":
+            subprocess.run(["sudo", "tailscale", "funnel", "--bg", "8123"], check=True)
+            client.publish(TAILSCALE_SELECT_STATE_TOPIC, "Home Assistant", retain=True)
+            log("Home Assistant exposed via Tailscale")
+
         else:
-            log(f"⚠️ Unknown target: {target}", "warning")
+            log(f"Unknown selection: {selection}", "warning")
 
-    except json.JSONDecodeError:
-        log(f"Invalid JSON payload: {payload}", "error")
     except subprocess.CalledProcessError as e:
-        log(f"Tailscale command failed: {e}", "error")
+        log(f"Tailscale serve command failed: {e}", "error")
     except Exception as e:
-        log(f"Error handling Tailscale control: {e}", "error")
+        log(f"Error in handle_tailscale_select: {e}", "error")
 
 # === MAIN EXECUTION ===
 def main():
