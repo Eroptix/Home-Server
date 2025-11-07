@@ -942,6 +942,7 @@ def on_connect(client, userdata, flags, rc):
         client.subscribe(BLUETOOTH_DISCONNECT_TOPIC)
         client.subscribe(BACKUP_RUN_TOPIC)
         client.subscribe(PLAY_ALBUM_TOPIC)
+        client.subscribe(TAILSCALE_SELECT_COMMAND_TOPIC)
 
         # Publish availability
         client.publish(AVAILABILITY_TOPIC, "connected", retain=True)
