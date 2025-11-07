@@ -47,7 +47,7 @@ client = None
 
 # Device information
 DEVICE_NAME = "homeserver"
-CURRENT_SW_VERSION = "1.2.9"
+CURRENT_SW_VERSION = "1.3.0"
 DEVICE_MODEL = "Home PC Server"
 DEVICE_MANUFACTURER = "BTM Engineering"
 
@@ -597,7 +597,7 @@ def setup_home_assistant_entities():
     publish_mqtt_availability_binary_sensor_discovery("MQTT Server Status", AVAILABILITY_TOPIC, icon="mdi:server", device_class="connectivity")
 
     # Select Entities
-    publish_mqtt_select_discovery("Tailscale Exposed Service", TAILSCALE_SELECT_COMMAND_TOPIC, TAILSCALE_SELECT_STATE_TOPIC,["Disabled", "Home Assistant", "Bitwarden", "Portainer"], icon="mdi:cloud-lock")
+    publish_mqtt_select_discovery("Tailscale Exposed Service", TAILSCALE_SELECT_COMMAND_TOPIC, TAILSCALE_SELECT_STATE_TOPIC,["Disabled", "Home Assistant", "Bitwarden", "Portainer", "Jellyseer", "Qbittorrent"], icon="mdi:cloud-lock")
 
     log("Home Assistant entities setup complete")
 
@@ -1011,8 +1011,18 @@ def handle_tailscale_select(payload):
 
         elif selection.lower() == "portainer":
             subprocess.run(["sudo", "tailscale", "funnel", "--bg", "9000"], check=True)
-            client.publish(TAILSCALE_SELECT_STATE_TOPIC, "Home Assistant", retain=True)
+            client.publish(TAILSCALE_SELECT_STATE_TOPIC, "Portainer", retain=True)
             log("Portainer exposed via Tailscale")
+
+        elif selection.lower() == "jellyseer":
+            subprocess.run(["sudo", "tailscale", "funnel", "--bg", "3000"], check=True)
+            client.publish(TAILSCALE_SELECT_STATE_TOPIC, "Jellyseer", retain=True)
+            log("Jellyseer exposed via Tailscale")
+
+        elif selection.lower() == "qbittorrent":
+            subprocess.run(["sudo", "tailscale", "funnel", "--bg", "6881"], check=True)
+            client.publish(TAILSCALE_SELECT_STATE_TOPIC, "Qbittorren", retain=True)
+            log("Qbittorrent exposed via Tailscale")
 
         elif selection.lower() == "disabled":
             # Just stop any active Tailscale routes
