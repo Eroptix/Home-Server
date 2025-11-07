@@ -1000,7 +1000,7 @@ def handle_tailscale_select(payload):
         subprocess.run(["sudo", "tailscale", "funnel", "disable"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
         if selection.lower() == "bitwarden":
-            subprocess.run(["sudo", "tailscale", "funnel", "--bg", "127.0.0.1:4080"], check=True)
+            subprocess.run(["sudo", "tailscale", "serve", "--bg", "127.0.0.1:4080"], check=True)
             client.publish(TAILSCALE_SELECT_STATE_TOPIC, "Bitwarden", retain=True)
             log("Bitwarden exposed via Tailscale")
 
