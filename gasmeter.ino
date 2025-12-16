@@ -95,6 +95,7 @@ String mirrorlineAlpha_command_topic =     String("home/") + deviceName + String
 
 // Buttons
 String reset_topic =                       String("home/") + deviceName + String("/reset");
+String recalibrate_topic =                 String("home/") + deviceName + String("/recalibrate");
 
 // Initalize the Mqtt client instance
 WiFiClient espClient;
@@ -174,6 +175,7 @@ bool connectMQTT()
       subscribeTopic(baselineAlpha_command_topic);
       subscribeTopic(mirrorlineAlpha_command_topic);
       subscribeTopic(reset_topic);
+      subscribeTopic(recalibrate_topic);
       subscribeTopic(receive_meter_topic);
 
       // Send discovery payload
@@ -247,6 +249,11 @@ void mqttCallback(char* topic, byte* payload, unsigned int length)
   {
     consoleLog("Command received: Reboot", 1);
     restartESP();
+  }
+  else if (String(topic) == recalibrate_topic) 
+  {
+    consoleLog("Command received: Recalibrate", 1);
+    requestParameters();
   }
   else
   {
@@ -923,6 +930,7 @@ void sendDiscoveries()
 
   // Buttons
   publishMQTTButtonDiscovery("Reboot ESP", reset_topic, "mdi:restart", false);
+  publishMQTTButtonDiscovery("Recalibrate", recalibrate_topic, "mdi:restart", false);
 }
 
 // Send back received parameters to the server
@@ -989,9 +997,9 @@ void setup(void)
   });
 
   // Reset logging
-  consoleLog("None", 1);
-  consoleLog("None", 2);
-  consoleLog("None", 3);
+  consoleLog("No INFO", 1);
+  consoleLog("No WARNING", 2);
+  consoleLog("No ERROR", 3);
 
   // Publish diagnostic data to the server
   publishMessage(firmware_topic, currentSwVersion, true);
