@@ -47,7 +47,7 @@ client = None
 
 # Device information
 DEVICE_NAME = "homeserver"
-CURRENT_SW_VERSION = "1.3.3"
+CURRENT_SW_VERSION = "1.3.4"
 DEVICE_MODEL = "Home PC Server"
 DEVICE_MANUFACTURER = "BTM Engineering"
 
@@ -597,7 +597,7 @@ def setup_home_assistant_entities():
     publish_mqtt_availability_binary_sensor_discovery("MQTT Server Status", AVAILABILITY_TOPIC, icon="mdi:server", device_class="connectivity")
 
     # Select Entities
-    publish_mqtt_select_discovery("Tailscale Exposed Service", TAILSCALE_SELECT_COMMAND_TOPIC, TAILSCALE_SELECT_STATE_TOPIC,["Disabled", "Home Assistant", "Bitwarden", "Portainer", "Jellyseer", "Qbittorrent", "Stash", "Immich", "Node-Red"], icon="mdi:cloud-lock")
+    publish_mqtt_select_discovery("Tailscale Exposed Service", TAILSCALE_SELECT_COMMAND_TOPIC, TAILSCALE_SELECT_STATE_TOPIC,["Disabled", "Home Assistant", "Bitwarden", "Portainer", "Jellyseer", "Qbittorrent", "Stash", "Immich", "Node-Red","Remote-SSH"], icon="mdi:cloud-lock")
 
     log("Home Assistant entities setup complete")
 
@@ -1036,6 +1036,11 @@ def handle_tailscale_select(payload):
 
         elif selection.lower() == "node-red":
             subprocess.run(["sudo", "tailscale", "funnel", "--bg", "1880"], check=True)
+            client.publish(TAILSCALE_SELECT_STATE_TOPIC, "Node-Red", retain=True)
+            log("Immich exposed via Tailscale")
+
+        elif selection.lower() == "remote-ssh":
+            subprocess.run(["sudo", "tailscale", "funnel", "--bg", "22"], check=True)
             client.publish(TAILSCALE_SELECT_STATE_TOPIC, "Node-Red", retain=True)
             log("Immich exposed via Tailscale")
 
