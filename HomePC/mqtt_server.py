@@ -47,7 +47,7 @@ client = None
 
 # Device information
 DEVICE_NAME = "homeserver"
-CURRENT_SW_VERSION = "1.3.6"
+CURRENT_SW_VERSION = "1.3.7"
 DEVICE_MODEL = "Home PC Server"
 DEVICE_MANUFACTURER = "BTM Engineering"
 
@@ -1041,12 +1041,12 @@ def handle_tailscale_select(payload):
 
         elif selection.lower() == "remote-ssh":
             subprocess.run(["sudo", "tailscale", "funnel", "--bg", "22"], check=True)
-            client.publish(TAILSCALE_SELECT_STATE_TOPIC, "Node-Red", retain=True)
+            client.publish(TAILSCALE_SELECT_STATE_TOPIC, "Remote-SSH", retain=True)
             log("Remote SSH exposed via Tailscale")
 
         elif selection.lower() == "code-server":
             subprocess.run(["sudo", "tailscale", "funnel", "--bg", "8443"], check=True)
-            client.publish(TAILSCALE_SELECT_STATE_TOPIC, "Node-Red", retain=True)
+            client.publish(TAILSCALE_SELECT_STATE_TOPIC, "Code-Server", retain=True)
             log("Code-Server exposed via Tailscale")
 
         elif selection.lower() == "disabled":
