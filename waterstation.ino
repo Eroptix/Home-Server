@@ -779,6 +779,7 @@ void publishMQTTNumberDiscovery(String name, String commandTopic, String stateTo
   publishMessage(topic.c_str(), payload.c_str(), true);
 }
 
+// Create availability sensor payload
 void publishMQTTAvailabilityBinarySensor(String name, String availabilityTopic)
 {
   String uniqueID = String(deviceName) + "-" + removeSpaces(name);

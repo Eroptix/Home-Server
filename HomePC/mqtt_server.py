@@ -104,6 +104,9 @@ STATUS_ROOT_STORAGE_PERCENTAGE_TOPIC =      f"home/{DEVICE_NAME}/status/storage/
 TAILSCALE_SELECT_COMMAND_TOPIC =            f"home/{DEVICE_NAME}/tailscale/select/set"
 TAILSCALE_SELECT_STATE_TOPIC   =            f"home/{DEVICE_NAME}/tailscale/select/state"
 
+OPENWEBUI_PROMPT_TOPIC =                    f"home/{DEVICE_NAME}/openwebui/prompt"
+OPENWEBUI_RESPONSE_TOPIC =                  f"home/{DEVICE_NAME}/openwebui/response"
+
 # Backup script
 BACKUP_SCRIPT_URL = "https://raw.githubusercontent.com/Eroptix/Home-Server/refs/heads/main/HomePC/backup_script.sh"
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -115,6 +118,9 @@ DEFAULT_VOICE = "cmu-slt-hsmm"
 
 # Bluetooth device addresses
 BT_SOUNDBAR_MAC = "68:52:10:57:03:58"
+
+# LLM settings
+OPENWEBUI_API_URL = "http://localhost:5000/api/v1/generate"
 
 
 # === UTILITY FUNCTIONS ===
@@ -983,6 +989,8 @@ def on_message(client, userdata, msg):
             play_album(payload)
         elif topic == TAILSCALE_SELECT_COMMAND_TOPIC:
             handle_tailscale_select(payload)
+        elif topic == OPENWEBUI_PROMPT_TOPIC:
+            handle_openwebui(payload)
         else:
             log(f"Unknown command topic: {topic}", "warning")
 
@@ -1037,7 +1045,7 @@ def handle_tailscale_select(payload):
         elif selection.lower() == "node-red":
             subprocess.run(["sudo", "tailscale", "funnel", "--bg", "1880"], check=True)
             client.publish(TAILSCALE_SELECT_STATE_TOPIC, "Node-Red", retain=True)
-            log("Immich exposed via Tailscale")
+            log("Node-Red exposed via Tailscale")
 
         elif selection.lower() == "remote-ssh":
             subprocess.run(["sudo", "tailscale", "funnel", "--bg", "22"], check=True)
@@ -1060,6 +1068,32 @@ def handle_tailscale_select(payload):
         log(f"Tailscale serve command failed: {e}", "error")
     except Exception as e:
         log(f"Error in handle_tailscale_select: {e}", "error")
+
+# === LLM CONTROL ===
+def handle_openwebui(payload):
+    """Handle a prompt sent to OpenWebUI LLM via MQTT"""
+    try:
+        data = json.loads(payload)
+        prompt = data.get("prompt", "")
+        max_tokens = data.get("max_tokens", 200)
+
+        if not prompt:
+            log("handle_openwebui: No prompt provided", "warning")
+            return
+
+        # Send request to OpenWebUI API
+        response = requests.post(
+            OPENWEBUI_API_URL,
+            json={"prompt": prompt, "max_new_tokens": max_tokens}
+        ).json()
+
+        text = response.get("text", "")
+        # Publish response back via MQTT
+        client.publish(OPENWEBUI_RESPONSE_TOPIC, json.dumps({"text": text}))
+        log(f"handle_openwebui: Published response: {text}")
+
+    except Exception as e:
+        log(f"handle_openwebui: Error processing payload: {e}", "error")
 
 # === MAIN EXECUTION ===
 def main():
