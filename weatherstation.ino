@@ -20,6 +20,7 @@
 #include <ThingsBoard.h>
 #include <Espressif_Updater.h>
 #include <Arduino_MQTT_Client.h>
+#include <HTTPClient.h>
 
 /************************** Device Settings ***********************************/
 
@@ -38,7 +39,6 @@ bool debugMode = false;
 #define WIFI_PASS "k7pp3aexkmQh"
 const char* host = "Bird Feeder";
 
-
 #define uS_TO_S_FACTOR 1000000  /* Conversion factor for micro seconds to seconds */
 
 IPAddress local_IP(192, 168, 0, 115);
@@ -50,11 +50,20 @@ IPAddress secondaryDNS(0, 0, 0, 0);
 TwoWire I2C = TwoWire(0);
 Adafruit_BME280 bme;
 BH1750 lightMeter;
-WiFiClient client;
 
-// Initalize the Mqtt client instance
-WiFiClient wifiClient;
-Arduino_MQTT_Client mqttClient(wifiClient);
+// Refresh loop parameters
+int refreshRate = 5000;                             // Measurement loop length
+int refreshLoop = 1;                                // Number of refresh loops
+double upTime = 0;
+unsigned long previousMillis1 = 0;
+unsigned long previousMillisMQTT = 0;               // MQTT reconnect timing
+unsigned long previousMillisWiFi = 0;               // WiFi reconnect timing
+unsigned long mqttReconnectInterval = 5000;         // Check MQTT every 5 seconds
+unsigned long wifiReconnectInterval = 5000;         // Check WiFi every 5 seconds 
+unsigned long wifiRetryMaxInterval = 30000;         // 30 seconds max
+unsigned long mqttRetryMaxInterval = 60000;         // 60 seconds max 
+bool wifiStatus = false;                            // WiFi status indicator
+long wifiStrength;                                  // WiFi strength value 
 
 // Measurement parameters
 int batteryLevel;
@@ -881,7 +890,7 @@ void sendDiscoveries()
   delay(100);
 
   // Numbers
-  publishMQTTNumberDiscovery("Sleep Time", pump_time_command_topic, pump_time_state_topic, 1.0, 60.0, 1.0, "mdi:timer", "s", true);
+  publishMQTTNumberDiscovery("Sleep Time", sleep_command_topic, sleep_state_topic, 1.0, 60.0, 1.0, "mdi:timer", "s", true);
   delay(100);
   publishMQTTNumberDiscovery("Temperature Calibration", temp_calib_command_topic, temp_calib_state_topic, -10.0, 10.0, 0.1, "mdi:thermometer-plus", "°C", true);
   delay(100);
@@ -894,7 +903,6 @@ void sendDiscoveries()
 // Send back received parameters to the server
 void sendParameters()
 {
-  publishMessage(refreshRate_topic, refreshRate, true);
 }
 
 // Method to print the reason by which ESP32
@@ -931,39 +939,27 @@ void print_wakeup_reason()
   }
 }
 
-// Function to connect wifi
-bool connectWifi()
+void consoleLog(String consoleText, int logLevel = 1)
 {
-  int attempts = 1;
-  
-  // Connect to WiFi network
-  WiFi.begin(WIFI_SSID, WIFI_PASS);
-
-  // Wait for connection
-  while (WiFi.status() != WL_CONNECTED) {
-    attempts = attempts + 1;
-    delay(500);
-    Serial.print(".");
-
-    if(attempts == 50){
-      // Failed to connect
-      Serial.println("Failed to connect to WiFi");
-      return false;
+    switch (logLevel) 
+    {
+      case 1:
+        Serial.print("[INFO] ");  
+        publishMessage(log_info_topic, consoleText, false);
+        break;
+      case 2:
+        Serial.print("[WARNING] ");
+        publishMessage(log_warning_topic, consoleText, false);
+        break;
+      case 3:
+        Serial.print("[ERROR] ");
+        publishMessage(log_error_topic, consoleText, false);
+        break;
+      default:
+        consoleLog("Unknown log warning level", 2);
+        break;
     }
-  }
-  
-  Serial.println("");
-  Serial.print("Connected to ");
-  Serial.println(WIFI_SSID);
-  Serial.print("IP address: ");
-  Serial.println(WiFi.localIP());
 
-  return true;
-}
-
-void consoleLog(String consoleText)
-{
-    tb.sendTelemetryData("console", consoleText.c_str());
     Serial.println(consoleText);
 }
 
@@ -1111,39 +1107,30 @@ void setup() {
     Serial.println("Sending data to Home Assistant");
     delay(200);
     
-    tb.sendTelemetryData("temperature", airTemperature);
     Serial.println("    Temperature data sent");
     delay(200);
     
-    tb.sendTelemetryData("humidity", airHumidity);
     Serial.println("    Humidity data sent");
     delay(200);
     
-    tb.sendTelemetryData("pressure", airPressure);
     Serial.println("    Pressure data sent");
     delay(200);
     
-    tb.sendTelemetryData("battery", batteryLevel);
     Serial.println("    Battery data sent");
     delay(200);
     
-    tb.sendTelemetryData("solar", solarIntensity);
     Serial.println("    Solar data sent");
     delay(200);
     
-    tb.sendTelemetryData("uptime", upTime);
     Serial.println("    Uptime sent");
     delay(200); 
     
-    tb.sendTelemetryData("water", waterLevel);
     Serial.println("    Water level sent");
     delay(200);
 
-    tb.sendTelemetryData("rain", rain);
     Serial.println("    Rain sensor sent");
     delay(200);
 
-    tb.sendTelemetryData("motiontrigger", motionTrigger);
     Serial.println("    Motion trigger sent");
     delay(200);
   
@@ -1196,9 +1183,7 @@ void setup() {
     connectWifi();
     
     //Initialize Thingsboard connection
-    connectTB();
     
-    tb.sendAttributeData("operationStatus",true);
     Serial.println("Developer mode started");
   }
 }
@@ -1210,7 +1195,6 @@ void loop() {
 }
 
 /************************** Device Functions ***********************************/
-
 bool connectWifi()
 {
   int attempts = 1;
@@ -1307,6 +1291,38 @@ void handleParameters(const String& jsonPayload)
     Serial.print("    refreshRate: "); Serial.println(refreshRate);
 
     consoleLog("Parameters received and saved", 1);
+}
+
+// Handle parameters received via MQTT
+void handleParameter(String parameterName, String value) 
+{
+  if (parameterName == "pumpTime") 
+  {
+    sleepTime = value.toInt();
+  }
+  else if (parameterName == "refreshRate") 
+  {
+    refreshRate = value.toInt();
+  }
+  else if (parameterName == "tempCalibration") 
+  {
+    tempCalibration = value.toFloat();
+  }
+  else if (parameterName == "presCalibration") 
+  {
+    presCalibration = value.toFloat();
+  }
+  else if (parameterName == "humCalibration") 
+  {
+    humCalibration = value.toFloat();
+  }
+  else 
+  {
+    consoleLog("Unknown parameter: " + parameterName, 2);
+    return;
+  }
+
+  consoleLog("Parameter '" + parameterName + "' set to " + value, 1);
 }
 
 void setupBootParameters(String parameter, double value){
