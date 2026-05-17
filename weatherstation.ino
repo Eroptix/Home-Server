@@ -54,7 +54,6 @@ BH1750 lightMeter;
 // Refresh loop parameters
 int refreshRate = 5000;                             // Measurement loop length
 int refreshLoop = 1;                                // Number of refresh loops
-double upTime = 0;
 unsigned long previousMillis1 = 0;
 unsigned long previousMillisMQTT = 0;               // MQTT reconnect timing
 unsigned long previousMillisWiFi = 0;               // WiFi reconnect timing
@@ -148,6 +147,31 @@ String refreshRate_topic =                  String("home/") + deviceName + Strin
 // Initalize the Mqtt client instance
 WiFiClient espClient;
 PubSubClient client(espClient);
+
+// Logging function
+void consoleLog(String consoleText, int logLevel = 1)
+{
+    switch (logLevel) 
+    {
+      case 1:
+        Serial.print("[INFO] ");  
+        publishMessage(log_info_topic, consoleText, false);
+        break;
+      case 2:
+        Serial.print("[WARNING] ");
+        publishMessage(log_warning_topic, consoleText, false);
+        break;
+      case 3:
+        Serial.print("[ERROR] ");
+        publishMessage(log_error_topic, consoleText, false);
+        break;
+      default:
+        consoleLog("Unknown log warning level", 2);
+        break;
+    }
+
+    Serial.println(consoleText);
+}
 
 // Connect to the predefined MQTT broker
 bool connectMQTT()
@@ -876,9 +900,9 @@ void sendDiscoveries()
   delay(100);
 
   // Sensors
-  publishMQTTSensorDiscovery("Battery Level", battery_topic, "mdi:storage-tank-outline", "cm", "distance", "measurement", "", 1);
+  publishMQTTSensorDiscovery("Battery Level", battery_topic, "mdi:storage-tank-outline", "%", "battery", "measurement", "", 1);
   delay(100);
-  publishMQTTSensorDiscovery("Water Level", waterLevel_topic, "mdi:wawes-arrow-up", "cm", "distance", "measurement", "", 1);
+  publishMQTTSensorDiscovery("Water Level", waterLevel_topic, "mdi:waves-arrow-up", "cm", "distance", "measurement", "", 1);
   delay(100);
   publishMQTTSensorDiscovery("Solar Intensity", solar_topic, "mdi:percent-box-outline", "%", "", "measurement", "", 1);
   delay(100);
@@ -937,30 +961,6 @@ void print_wakeup_reason()
       Serial.printf("     Wakeup was not caused by deep sleep: %d\n",wakeup_reason); 
       break;
   }
-}
-
-void consoleLog(String consoleText, int logLevel = 1)
-{
-    switch (logLevel) 
-    {
-      case 1:
-        Serial.print("[INFO] ");  
-        publishMessage(log_info_topic, consoleText, false);
-        break;
-      case 2:
-        Serial.print("[WARNING] ");
-        publishMessage(log_warning_topic, consoleText, false);
-        break;
-      case 3:
-        Serial.print("[ERROR] ");
-        publishMessage(log_error_topic, consoleText, false);
-        break;
-      default:
-        consoleLog("Unknown log warning level", 2);
-        break;
-    }
-
-    Serial.println(consoleText);
 }
 
 void setup() {
@@ -1108,30 +1108,31 @@ void setup() {
     delay(200);
     
     Serial.println("    Temperature data sent");
+    publishMessage(temperature_topic, airTemperature, false);
     delay(200);
     
     Serial.println("    Humidity data sent");
+    publishMessage(humidity_topic, airHumidity, false);
     delay(200);
     
     Serial.println("    Pressure data sent");
+    publishMessage(pressure_topic, airPressure, false);
     delay(200);
     
     Serial.println("    Battery data sent");
+    publishMessage(battery_topic, batteryLevel, false);
     delay(200);
     
     Serial.println("    Solar data sent");
+    publishMessage(solar_topic, solarIntensity, false);
     delay(200);
     
     Serial.println("    Uptime sent");
+    publishMessage(uptime_topic, upTime, false);
     delay(200); 
     
     Serial.println("    Water level sent");
-    delay(200);
-
-    Serial.println("    Rain sensor sent");
-    delay(200);
-
-    Serial.println("    Motion trigger sent");
+    publishMessage(waterLevel_topic, waterLevel, false);
     delay(200);
   
     // Turn off indicator LED
@@ -1296,7 +1297,7 @@ void handleParameters(const String& jsonPayload)
 // Handle parameters received via MQTT
 void handleParameter(String parameterName, String value) 
 {
-  if (parameterName == "pumpTime") 
+  if (parameterName == "sleepTime") 
   {
     sleepTime = value.toInt();
   }
