@@ -1,32 +1,23 @@
-#include <SHT2x.h>
 #include <Adafruit_Sensor.h>
 #include <Adafruit_BME280.h>
 #include <Wire.h>
 #include <WiFi.h>
-#include <WebServer.h>
 #include <WiFiClient.h>
 #include <Update.h>
-#include "config.h"/
-#include "SD_MMC.h" 
-#include <SPIFFS.h>
-#include <FS.h>
-#include <SPI.h>
+#include "config.h" 
 #include "driver/rtc_io.h"
 #include <soc/sens_reg.h>
 #include <driver/adc.h>
 #include <BH1750.h>
-#include <ESPmDNS.h>
-#include <Update.h>
-#include <ThingsBoard.h>
-#include <Espressif_Updater.h>
-#include <Arduino_MQTT_Client.h>
 #include <HTTPClient.h>
+#include <ArduinoJson.h>
+#include <PubSubClient.h>
 
 /************************** Device Settings ***********************************/
 
 // Device-specific settings
 const char* deviceName = "weatherstation";
-const char* currentSwVersion = "1.0.1";
+const char* currentSwVersion = "1.1.0";
 const char* deviceModel = "ESP32-NodeMCU";
 const char* deviceManufacturer = "BTM Engineering";
 String configurationUrl = "";
@@ -37,32 +28,15 @@ bool debugMode = false;
 // WiFi connection parameters
 #define WIFI_SSID "UPC8F21BEF"
 #define WIFI_PASS "k7pp3aexkmQh"
-const char* host = "Bird Feeder";
 
 #define uS_TO_S_FACTOR 1000000  /* Conversion factor for micro seconds to seconds */
-
-IPAddress local_IP(192, 168, 0, 115);
-IPAddress gateway(192, 168, 0, 1);
-IPAddress subnet(255, 255, 255, 0);
-IPAddress primaryDNS(192, 168, 0, 1);
-IPAddress secondaryDNS(0, 0, 0, 0);
 
 TwoWire I2C = TwoWire(0);
 Adafruit_BME280 bme;
 BH1750 lightMeter;
 
-// Refresh loop parameters
-int refreshRate = 5000;                             // Measurement loop length
-int refreshLoop = 1;                                // Number of refresh loops
-unsigned long previousMillis1 = 0;
-unsigned long previousMillisMQTT = 0;               // MQTT reconnect timing
-unsigned long previousMillisWiFi = 0;               // WiFi reconnect timing
-unsigned long mqttReconnectInterval = 5000;         // Check MQTT every 5 seconds
-unsigned long wifiReconnectInterval = 5000;         // Check WiFi every 5 seconds 
-unsigned long wifiRetryMaxInterval = 30000;         // 30 seconds max
-unsigned long mqttRetryMaxInterval = 60000;         // 60 seconds max 
 bool wifiStatus = false;                            // WiFi status indicator
-long wifiStrength;                                  // WiFi strength value 
+double wifiStrength;                                 // WiFi strength value 
 
 // Measurement parameters
 int batteryLevel;
@@ -73,6 +47,9 @@ float airHumidity;
 float solarIntensity;
 bool rain;
 bool motionTrigger = false;
+int voltageDividerRatio = 2;
+float minV = 3.7;
+float maxV = 4.2;
 
 // Registry parameters
 uint64_t reg_a;
@@ -119,6 +96,7 @@ String log_warning_topic =                  String("home/") + deviceName + Strin
 String log_error_topic =                    String("home/") + deviceName + String("/log/error");
 String command_topic =                      String("home/") + deviceName + String("/command");
 String uptime_topic =                       String("home/") + deviceName + String("/uptime");
+String boot_count_topic =                   String("home/") + deviceName + String("/bootCount");
 String firmware_topic =                     String("home/") + deviceName + String("/firmware");
 String ip_topic =                           String("home/") + deviceName + String("/ip");
 String wifi_strength_topic =                String("home/") + deviceName + String("/wifi/strength");
@@ -129,6 +107,8 @@ String temperature_topic =                  String("home/") + deviceName + Strin
 String humidity_topic =                     String("home/") + deviceName + String("/humidity");
 String pressure_topic =                     String("home/") + deviceName + String("/pressure");
 String battery_topic =                      String("home/") + deviceName + String("/battery");
+String battery_voltage_topic =              String("home/") + deviceName + String("/battery/voltage");
+String battery_raw_topic =                  String("home/") + deviceName + String("/battery/raw");
 String solar_topic =                        String("home/") + deviceName + String("/solar");
 
 // Numbers
@@ -140,9 +120,6 @@ String pres_calib_state_topic =             String("home/") + deviceName + Strin
 String pres_calib_command_topic =           String("home/") + deviceName + String("/parameters/presCalib/command");
 String hum_calib_state_topic =              String("home/") + deviceName + String("/parameters/humCalib/state");
 String hum_calib_command_topic =            String("home/") + deviceName + String("/parameters/humCalib/command");
-
-// Parameters
-String refreshRate_topic =                  String("home/") + deviceName + String("/parameters/refreshRate");
 
 // Initalize the Mqtt client instance
 WiFiClient espClient;
@@ -227,10 +204,6 @@ void mqttCallback(char* topic, byte* payload, unsigned int length)
   if (String(topic) == ota_response_topic) 
   {
     updateFirmwareOTA(message);
-  }
-  else if (String(topic) == parameter_response_topic) 
-  {
-    handleParameters(message);
   }
   else if (String(topic) == command_topic) 
   {
@@ -882,6 +855,8 @@ void sendDiscoveries()
   // Diagnostics
   publishMQTTSensorDiscovery("Up Time", uptime_topic,"mdi:clock", "h", "duration", "total_increasing", "diagnostic", 0);
   delay(100);
+  publishMQTTSensorDiscovery("Boot count", boot_count_topic,"mdi:clock", "", "", "total_increasing", "diagnostic", 0);
+  delay(100);
 	publishMQTTSensorDiscovery("OTA Status", ota_status_topic, "mdi:update", "", "", "", "diagnostic", -1);
   delay(100);
 	publishMQTTSensorDiscovery("Firmware Version", firmware_topic, "mdi:application-outline", "", "", "", "diagnostic", -1);
@@ -894,17 +869,21 @@ void sendDiscoveries()
   delay(100);
 	publishMQTTSensorDiscovery("IP Address", ip_topic, "mdi:ip-network-outline", "", "", "", "diagnostic", -1);
   delay(100);
-  publishMQTTSensorDiscovery("WiFi Strength", wifi_strength_topic, "mdi:access-point", "", "", "", "diagnostic", -1);
+  publishMQTTSensorDiscovery("WiFi Strength", wifi_strength_topic, "mdi:access-point", "dBm", "signal_strength", "measurement", "diagnostic", -1);
   delay(100);
   publishMQTTAvailabilityBinarySensor("Availability", availability_topic);
   delay(100);
+  publishMQTTSensorDiscovery("Battery Raw", battery_raw_topic, "mdi:battery-alert-variant-outline", "", "", "measurement", "diagnostic", 1);
+  delay(100);
+  publishMQTTSensorDiscovery("Battery Voltage", battery_voltage_topic, "mdi:battery-heart-outline", "V", "voltage", "measurement", "diagnostic", 1);
+  delay(100);
 
   // Sensors
-  publishMQTTSensorDiscovery("Battery Level", battery_topic, "mdi:storage-tank-outline", "%", "battery", "measurement", "", 1);
+  publishMQTTSensorDiscovery("Battery Level", battery_topic, "mdi:battery-outline", "%", "battery", "measurement", "", 1);
   delay(100);
   publishMQTTSensorDiscovery("Water Level", waterLevel_topic, "mdi:waves-arrow-up", "cm", "distance", "measurement", "", 1);
   delay(100);
-  publishMQTTSensorDiscovery("Solar Intensity", solar_topic, "mdi:percent-box-outline", "%", "", "measurement", "", 1);
+  publishMQTTSensorDiscovery("Solar Intensity", solar_topic, "mdi:percent-box-outline", "lx", "illuminance", "measurement", "", 1);
   delay(100);
   publishMQTTSensorDiscovery("Temperature", temperature_topic, "mdi:thermometer", "°C", "temperature", "measurement", "", 1);
   delay(100);
@@ -914,7 +893,7 @@ void sendDiscoveries()
   delay(100);
 
   // Numbers
-  publishMQTTNumberDiscovery("Sleep Time", sleep_command_topic, sleep_state_topic, 1.0, 60.0, 1.0, "mdi:timer", "s", true);
+  publishMQTTNumberDiscovery("Sleep Time", sleep_command_topic, sleep_state_topic, 60, 3600.0, 10.0, "mdi:timer", "s", true);
   delay(100);
   publishMQTTNumberDiscovery("Temperature Calibration", temp_calib_command_topic, temp_calib_state_topic, -10.0, 10.0, 0.1, "mdi:thermometer-plus", "°C", true);
   delay(100);
@@ -927,6 +906,10 @@ void sendDiscoveries()
 // Send back received parameters to the server
 void sendParameters()
 {
+  publishMessage(sleep_state_topic, sleepTime, true);
+  publishMessage(temp_calib_state_topic, tempCalibration, true);
+  publishMessage(pres_calib_state_topic, presCalibration, true);
+  publishMessage(hum_calib_state_topic, humCalibration, true);
 }
 
 // Method to print the reason by which ESP32
@@ -963,236 +946,205 @@ void print_wakeup_reason()
   }
 }
 
-void setup() {
+void setup() 
+{
+  Serial.begin(115200);
 
-  if (!devMode) 
-  {
-    Serial.begin(115200);
-  
-    // Disable brownout detector
-    WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0);
-  
-    // Save register values for the WiFi setting
-    reg_a = READ_PERI_REG(SENS_SAR_START_FORCE_REG);
-    reg_b = READ_PERI_REG(SENS_SAR_READ_CTRL2_REG);
-    reg_c = READ_PERI_REG(SENS_SAR_MEAS_START2_REG);
-  
-    // Turn on indicator LED
-    pinMode(INDICATOR_LED_PIN, OUTPUT);
-    digitalWrite(INDICATOR_LED_PIN,HIGH);
-  
-    // Configure ADC pins
-    pinMode(BATTERY_VOLTAGE_PIN, INPUT);
-    pinMode(WATER_SENSOR_PIN, INPUT);
-    pinMode(MOTION_SENSOR_PIN, INPUT);
-    adcAttachPin(BATTERY_VOLTAGE_PIN);
-    adcAttachPin(WATER_SENSOR_PIN);
-    analogReadResolution(10);
-    analogSetAttenuation(ADC_11db);
-  
-    // Take some time to open up the Serial Monitor
-    delay(1000);
-  
-    // Enable brownout detector
-    WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 1);
-  
-    // Increment boot number and print it every reboot
-    bootCount++;
-    Serial.println("");
-    Serial.println("*******************************************************");
-    Serial.println("      Boot Number: " + String(bootCount));
-    Serial.println("      Uptime: " + String(upTime));
-  
-    // Print the wakeup reason for ESP32
-    print_wakeup_reason();
+  // Disable brownout detector
+  WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0);
 
-    Serial.println("*******************************************************");
-    Serial.println("");
-    
-    esp_sleep_enable_timer_wakeup(sleepTime * uS_TO_S_FACTOR);
-  
-    // Initialize I2C bus
-    I2C.begin(I2C_SDA, I2C_SCL, 100000);
-    delay(200);
-    
-    // Initialize BME280
-    bme.begin(0x76, &I2C);
-    delay(200);
-    
-    // Initialize light meter
-    lightMeter.begin(BH1750::CONTINUOUS_HIGH_RES_MODE, 0x23, &I2C);
-  
-    // Make measurements
-    Serial.println("Starting measurements");
+  // Save register values for the WiFi setting
+  reg_a = READ_PERI_REG(SENS_SAR_START_FORCE_REG);
+  reg_b = READ_PERI_REG(SENS_SAR_READ_CTRL2_REG);
+  reg_c = READ_PERI_REG(SENS_SAR_MEAS_START2_REG);
 
-    waterLevel = readWaterLevel(WATER_SENSOR_PIN,50);
-    Serial.print("    Water Level: ");
-    Serial.println(waterLevel);
-    delay(200);
-    
-    batteryLevel = readBatteryLevel(BATTERY_VOLTAGE_PIN,50);
-    Serial.print("    Battery Level: ");
-    Serial.println(batteryLevel);
-    delay(200);
-  
-    solarIntensity = lightMeter.readLightLevel();
-    Serial.print("    Solar Intesity: ");
-    Serial.println(solarIntensity);
-    delay(200);
-    
-    airPressure = bme.readPressure()/100 + presCalibration;
-    Serial.print("    Air Pressure: ");
-    Serial.println(airPressure);
-    delay(200);
-    
-    airTemperature = bme.readTemperature() + tempCalibration;
-    Serial.print("    Air Temperature: ");
-    Serial.println(airTemperature);
-    delay(200);
-    
-    airHumidity = bme.readHumidity() + humCalibration;
-    Serial.print("    Air Humidity: ");
-    Serial.println(airHumidity);
-    delay(200);
+  // Turn on indicator LED
+  pinMode(INDICATOR_LED_PIN, OUTPUT);
+  digitalWrite(INDICATOR_LED_PIN,HIGH);
 
-    rain = digitalRead(RAIN_SENSOR_PIN);
-    rain = !rain;
-    Serial.print("    Rain Sensor: ");
-    Serial.println(rain);
+  // Configure ADC pins
+  pinMode(BATTERY_VOLTAGE_PIN, INPUT);
+  pinMode(WATER_SENSOR_PIN, INPUT);
+  pinMode(MOTION_SENSOR_PIN, INPUT);
+  adcAttachPin(BATTERY_VOLTAGE_PIN);
+  adcAttachPin(WATER_SENSOR_PIN);
+  analogReadResolution(10);
+  analogSetAttenuation(ADC_11db);
 
-    // Connect to WiFi
-    wifiStatus = connectWifi();
+  // Take some time to open up the Serial Monitor
+  delay(1000);
 
-    // Set MQTT server and callback
-    client.setServer(mqtt_server, mqtt_port);
-    client.setCallback(mqttCallback);
-    client.setBufferSize(4096);
-    client.setKeepAlive(120);
-    mqttStatus = connectMQTT();
+  // Enable brownout detector
+  WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 1);
 
-    // Announce availability
-    publishMessage(availability_topic, "connected", true);
+  // Increment boot number and print it every reboot
+  bootCount++;
+  upTime = (bootCount * sleepTime) / 3600;
+  Serial.println("");
+  Serial.println("*******************************************************");
+  Serial.println("      Boot Number: " + String(bootCount));
+  Serial.println("      Uptime: " + String(upTime));
 
-    // Query latest firmware version
-    requestFirmwareVersion();
-    delay(1000);
+  // Print the wakeup reason for ESP32
+  print_wakeup_reason();
 
-    // Request boot parameters
-    requestParameters();
-    delay(1000);
+  Serial.println("*******************************************************");
+  Serial.println("");
 
-    // Open MQTT connection to receive parameters
-    for (int i = 0; i <= 100; i++) {
-      client.loop();
-      delay(50);
-    }
+  esp_sleep_enable_timer_wakeup(sleepTime * uS_TO_S_FACTOR);
 
-    // Verify received parameters
-    sendParameters();
+  // Initialize I2C bus
+  I2C.begin(I2C_SDA, I2C_SCL, 100000);
+  delay(200);
 
-    // Set OTA progress callback
-    Update.onProgress([](unsigned int progress, unsigned int total) 
-    {
-      Serial.printf("[INFO] OTA Progress: %u%%\r", (progress * 100) / total);
-      Serial.println();
-    });
+  // Initialize BME280
+  bme.begin(0x76, &I2C);
+  delay(200);
 
-    // Publish diagnostic data to the server
-    publishMessage(firmware_topic, currentSwVersion, true);
-    publishMessage(log_info_topic, "Starting main loop", false);
-    publishMessage(ip_topic, configurationUrl, true);
+  // Initialize light meter
+  lightMeter.begin(BH1750::CONTINUOUS_HIGH_RES_MODE, 0x23, &I2C);
 
-    // Send data to Thingboards server
-    Serial.println("-----------------------------------------");
-    Serial.println("Sending data to Home Assistant");
-    delay(200);
-    
-    Serial.println("    Temperature data sent");
-    publishMessage(temperature_topic, airTemperature, false);
-    delay(200);
-    
-    Serial.println("    Humidity data sent");
-    publishMessage(humidity_topic, airHumidity, false);
-    delay(200);
-    
-    Serial.println("    Pressure data sent");
-    publishMessage(pressure_topic, airPressure, false);
-    delay(200);
-    
-    Serial.println("    Battery data sent");
-    publishMessage(battery_topic, batteryLevel, false);
-    delay(200);
-    
-    Serial.println("    Solar data sent");
-    publishMessage(solar_topic, solarIntensity, false);
-    delay(200);
-    
-    Serial.println("    Uptime sent");
-    publishMessage(uptime_topic, upTime, false);
-    delay(200); 
-    
-    Serial.println("    Water level sent");
-    publishMessage(waterLevel_topic, waterLevel, false);
-    delay(200);
-  
-    // Turn off indicator LED
-    digitalWrite(INDICATOR_LED_PIN,LOW);
-  
-    // Turn off WiFi connection
-    WiFi.mode(WIFI_OFF);
-    WiFi.disconnect();
-    WRITE_PERI_REG(SENS_SAR_START_FORCE_REG, reg_a);  // fix ADC registers
-    WRITE_PERI_REG(SENS_SAR_READ_CTRL2_REG, reg_b);
-    WRITE_PERI_REG(SENS_SAR_MEAS_START2_REG, reg_c);
-  
-    // Activating deep sleep
-    Serial.println("*******************************************************");
-    Serial.print("Deep sleep activated! (Sleep Time: ");
-    Serial.print(sleepTime);
-    Serial.println(" s)");
-    Serial.println("*******************************************************");
-    delay(500);
-    
-    Serial.flush(); 
-    esp_deep_sleep_start();
+  // Make measurements
+  Serial.println("Starting measurements");
+
+  waterLevel = readWaterLevel(WATER_SENSOR_PIN, 10);
+  Serial.print("    Water Level: ");
+  Serial.println(waterLevel);
+  delay(200);
+
+  batteryLevel = readBatteryLevel(BATTERY_VOLTAGE_PIN, 10);
+  Serial.print("    Battery Level: ");
+  Serial.println(batteryLevel);
+  delay(200);
+
+  solarIntensity = lightMeter.readLightLevel();
+  Serial.print("    Solar Intesity: ");
+  Serial.println(solarIntensity);
+  delay(200);
+
+  airPressure = bme.readPressure()/100 + presCalibration;
+  Serial.print("    Air Pressure: ");
+  Serial.println(airPressure);
+  delay(200);
+
+  airTemperature = bme.readTemperature() + tempCalibration;
+  Serial.print("    Air Temperature: ");
+  Serial.println(airTemperature);
+  delay(200);
+
+  airHumidity = bme.readHumidity() + humCalibration;
+  Serial.print("    Air Humidity: ");
+  Serial.println(airHumidity);
+  delay(200);
+
+  // Calculate or map values
+  float batteryVoltage = (batteryLevel / 1023.0) * 3.3 * voltageDividerRatio;
+  int batteryPercentage = map(batteryVoltage * 100, minV * 100, maxV * 100, 0, 100);
+
+  // Connect to WiFi
+  wifiStatus = connectWifi();
+  wifiStrength = WiFi.RSSI(); 
+
+  // Set MQTT server and callback
+  client.setServer(mqtt_server, mqtt_port);
+  client.setCallback(mqttCallback);
+  client.setBufferSize(4096);
+  client.setKeepAlive(sleepTime * 2);
+  mqttStatus = connectMQTT();
+
+  // Announce availability
+  publishMessage(availability_topic, "connected", true);
+
+  // Query latest firmware version
+  requestFirmwareVersion();
+  delay(1000);
+
+  // Request boot parameters
+  requestParameters();
+  delay(1000);
+
+  // Open MQTT connection to receive parameters
+  for (int i = 0; i <= 100; i++) {
+    client.loop();
+    delay(50);
   }
-  else 
+
+  // Verify received parameters
+  sendParameters();
+
+  // Set OTA progress callback
+  Update.onProgress([](unsigned int progress, unsigned int total) 
   {
-    // Disable brownout detector
-    WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0);
-    
-    Serial.begin(115200);
+    Serial.printf("[INFO] OTA Progress: %u%%\r", (progress * 100) / total);
+    Serial.println();
+  });
 
-    Serial.println("");
-    Serial.println("*******************************************************");
-    Serial.println("      DEVELOPER MODE");
-    Serial.println("*******************************************************");
-    Serial.println("");
-    
-    // Save register values for the WiFi setting
-    reg_a = READ_PERI_REG(SENS_SAR_START_FORCE_REG);
-    reg_b = READ_PERI_REG(SENS_SAR_READ_CTRL2_REG);
-    reg_c = READ_PERI_REG(SENS_SAR_MEAS_START2_REG);
+  // Publish diagnostic data to the server
+  publishMessage(firmware_topic, currentSwVersion, true);
+  publishMessage(log_info_topic, "Starting main loop", false);
+  publishMessage(ip_topic, configurationUrl, true);
+  publishMessage(boot_count_topic, bootCount, false);
+  publishMessage(wifi_strength_topic, wifiStrength, false);
 
-    // Take some time to stabilize
-    delay(1000);
+  // Send data to Thingboards server
+  Serial.println("-----------------------------------------");
+  Serial.println("Sending data to Home Assistant");
+  delay(200);
 
-    // Enable brownout detector
-    WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 1);
-    
-    // Connect to WiFi network
-    connectWifi();
-    
-    //Initialize Thingsboard connection
-    
-    Serial.println("Developer mode started");
-  }
+  Serial.println("    Temperature data sent");
+  publishMessage(temperature_topic, airTemperature, false);
+  delay(200);
+
+  Serial.println("    Humidity data sent");
+  publishMessage(humidity_topic, airHumidity, false);
+  delay(200);
+
+  Serial.println("    Pressure data sent");
+  publishMessage(pressure_topic, airPressure, false);
+  delay(200);
+
+  Serial.println("    Battery data sent");
+  publishMessage(battery_topic, batteryPercentage, false);
+  publishMessage(battery_raw_topic, batteryLevel, false);
+  publishMessage(battery_voltage_topic, batteryVoltage, false);
+  delay(200);
+
+  Serial.println("    Solar data sent");
+  publishMessage(solar_topic, solarIntensity, false);
+  delay(200);
+
+  Serial.println("    Uptime sent");
+  publishMessage(uptime_topic, upTime, false);
+  delay(200); 
+
+  Serial.println("    Water level sent");
+  publishMessage(waterLevel_topic, waterLevel, false);
+  delay(200);
+
+  // Turn off indicator LED
+  digitalWrite(INDICATOR_LED_PIN,LOW);
+
+  // Turn off WiFi connection
+  WiFi.disconnect();
+  WiFi.mode(WIFI_OFF);
+  WRITE_PERI_REG(SENS_SAR_START_FORCE_REG, reg_a);  // fix ADC registers
+  WRITE_PERI_REG(SENS_SAR_READ_CTRL2_REG, reg_b);
+  WRITE_PERI_REG(SENS_SAR_MEAS_START2_REG, reg_c);
+
+  // Activating deep sleep
+  Serial.println("*******************************************************");
+  Serial.print("Deep sleep activated! (Sleep Time: ");
+  Serial.print(sleepTime);
+  Serial.println(" s)");
+  Serial.println("*******************************************************");
+  delay(500);
+
+  Serial.flush(); 
+  esp_deep_sleep_start();
 }
 
-void loop() {
-  //Firmware update mode 
-  client.loop();
-  delay(200);
+void loop() 
+{
 }
 
 /************************** Device Functions ***********************************/
@@ -1264,46 +1216,11 @@ void handleCommands(String message)
 }
 
 // Handle parameters received via MQTT
-void handleParameters(const String& jsonPayload) 
-{
-    // Create a JSON document (adjust size if needed)
-    StaticJsonDocument<1024> doc;
-
-    // Deserialize the JSON
-    DeserializationError error = deserializeJson(doc, jsonPayload);
-    if (error) {
-        consoleLog("Parameter JSON parsing failed: ", 2);
-        Serial.println(error.c_str());
-        return;
-    }
-
-    // Check if all expected parameters exist before assigning values
-    if (!doc.containsKey("refreshRate"))
-    {
-        consoleLog("Missing one or more required parameters", 2);
-        return;
-    }
-
-    // Extract values
-    refreshRate = doc["refreshRate"].as<int>();
-
-    // Print extracted values
-    Serial.println("  Extracted Parameters:");
-    Serial.print("    refreshRate: "); Serial.println(refreshRate);
-
-    consoleLog("Parameters received and saved", 1);
-}
-
-// Handle parameters received via MQTT
 void handleParameter(String parameterName, String value) 
 {
   if (parameterName == "sleepTime") 
   {
     sleepTime = value.toInt();
-  }
-  else if (parameterName == "refreshRate") 
-  {
-    refreshRate = value.toInt();
   }
   else if (parameterName == "tempCalibration") 
   {
@@ -1326,43 +1243,6 @@ void handleParameter(String parameterName, String value)
   consoleLog("Parameter '" + parameterName + "' set to " + value, 1);
 }
 
-void setupBootParameters(String parameter, double value){
-
-  if (parameter == "sleepTime") {
-      sleepTime = value;
-      Serial.print("    [SET] sleepTime");
-      Serial.print(" [TO] ");
-      Serial.println(value);
-
-  } else if (parameter == "devMode") {
-      devMode = value;
-      Serial.print("    [SET] devMode");
-      Serial.print(" [TO] ");
-      Serial.println(value);
-
-  } else if (parameter == "tempCalibration") {
-      tempCalibration = value;
-      Serial.print("    [SET] tempCalibration");
-      Serial.print(" [TO] ");
-      Serial.println(value);
-
-  } else if (parameter == "presCalibration") {
-      presCalibration = value;
-      Serial.print("    [SET] presCalibration");
-      Serial.print(" [TO] ");
-      Serial.println(value);
-
-  } else if (parameter == "humCalibration") {
-      humCalibration = value;
-      Serial.print("    [SET] humCalibration");
-      Serial.print(" [TO] ");
-      Serial.println(value);
-
-  } else {
-    Serial.println("Invalid boot parameter");
-  }
-}
-
 // Reads battery level
 int readBatteryLevel(int pin, int sumNumber) {
 
@@ -1370,7 +1250,7 @@ int readBatteryLevel(int pin, int sumNumber) {
     
     for (int i = 0; i <= sumNumber; i++) {
       sum += analogRead(pin);
-      delay(100);
+      delay(10);
     }
     
     return sum/sumNumber;
@@ -1385,7 +1265,7 @@ int readWaterLevel(int pin, int sumNumber) {
     
     for (int i = 0; i <= sumNumber; i++) {
       sum += analogRead(pin);
-      delay(100);
+      delay(10);
     } 
 
     return sum/sumNumber;
